@@ -1,6 +1,6 @@
 package main
 
-import ("fmt";"github.com/isaacml/cmdline";"bufio";"sync";"strings")
+import ("fmt";"github.com/isaacml/cmdline";"bufio";"sync";"strings";"time")
 
 var cmd2run bool
 var wg sync.WaitGroup
@@ -24,16 +24,13 @@ func cmd1(comando1 string, ch chan int){
 	defer wg.Done()
 	
 	for {
-		fmt.Println("cmd1-1")
 		decoder := cmdline.Cmdline(comando1)
 		lectura,errL := decoder.StderrPipe()
 		if errL != nil{
 			fmt.Println(errL)
 		}
 		mReader := bufio.NewReader(lectura)
-		fmt.Println("cmd1-2")
 		<- ch
-		fmt.Println("cmd1-3")
 		decoder.Start()
 		for{ // bucle de reproduccion normal
 			line,err := mReader.ReadString('\n')
@@ -44,18 +41,16 @@ func cmd1(comando1 string, ch chan int){
 			fmt.Printf("[cmd1] %s",line)
 		}
 		decoder.Stop()
-		fmt.Println("cmd1-4")
 		<- ch
-		fmt.Println("cmd1-5")
 	}
 }
 
 func cmd2(comando2 string, ch chan int){
 	fmt.Println(comando2)
 	defer wg.Done()
+	var tiempo time.Time
 	
 	for {
-		fmt.Println("cmd2-1")
 		cmd2run = false
 		decoder := cmdline.Cmdline(comando2)
 		lectura,errL := decoder.StderrPipe()
@@ -63,11 +58,19 @@ func cmd2(comando2 string, ch chan int){
 			fmt.Println(errL)
 		}
 		mReader := bufio.NewReader(lectura)
+		tiempo = time.Now()
+		go func() {
+			for {
+				if time.Since(tiempo).Seconds() > 2.0 {
+					decoder.Stop()
+					break
+				}
+			}
+		}()
 		decoder.Start()
 		for{ // bucle de reproduccion normal
-			fmt.Println("cmd2-22")
+			tiempo = time.Now()
 			line,err := mReader.ReadString('\n')
-			fmt.Println("cmd2-23")
 			if err != nil {
 				fmt.Println("Fin del cmd2 !!!")
 				break;
@@ -76,17 +79,13 @@ func cmd2(comando2 string, ch chan int){
 			if strings.Contains(line, "built on"){
 				if !cmd2run {
 					//time.Sleep(3*time.Second)
-					fmt.Println("cmd2-2")
 					ch <- 1
-					fmt.Println("cmd2-3")
 					cmd2run = true
 				}
 			}
 			fmt.Printf("[cmd2] %s",line)
 		}
 		decoder.Stop()
-		fmt.Println("cmd2-4")
 		ch <- 1
-		fmt.Println("cmd2-5")
 	}
 }
