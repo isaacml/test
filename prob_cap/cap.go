@@ -11,7 +11,7 @@ func main(){
 	
 	wg.Add(2)
 	
-	go cmd2("/usr/bin/avconv -video_size 720x576 -framerate 25.0000 -pixel_format uyvy422 -f rawvideo -i /tmp/video_fifo -sample_rate 48k -channels 2 -f s16le -i /tmp/audio_fifo -pix_fmt yuv420p -vf yadif=3 -c:v libx264 -b:v 2000k -minrate:v 2000k -maxrate:v 2000k -bufsize:v 1835k -flags:v +cgop -profile:v high -x264-params level=4.1:keyint=100 -r:v 50.0000 -threads 8 -af volume=volume=2dB:precision=fixed -c:a libfdk_aac -profile:a aac_he -b:a 128k -s 720x288 -aspect 16:9 -hls_time 10 -hls_list_size 3 -hls_wrap 5 /usr/local/bin/capturas/Isaac_ML2-Santa_Cruz2.m3u8", canal)
+	go cmd2("/usr/bin/avconv -video_size 720x576 -framerate 25.0000 -pixel_format uyvy422 -f rawvideo -i /tmp/video_fifo -sample_rate 48k -channels 2 -f s16le -i /tmp/audio_fifo -pix_fmt yuv420p -vf yadif=3 -c:v libx264 -b:v 2000k -minrate:v 2000k -maxrate:v 2000k -bufsize:v 1835k -flags:v +cgop -profile:v high -x264-params level=4.1:keyint=100 -r:v 50.0000 -threads 8 -af volume=volume=2dB:precision=fixed -c:a libfdk_aac -profile:a aac_he -b:a 128k -s 720x288 -aspect 16:9 -hls_time 10 -hls_list_size 3 /usr/local/bin/capturas/Isaac_ML2-Santa_Cruz2.m3u8", canal)
 	
 	go cmd1("/usr/bin/capture -d 0 -m 2 -V 3 -A 2 -v /tmp/video_fifo -a /tmp/audio_fifo", canal)
 	
