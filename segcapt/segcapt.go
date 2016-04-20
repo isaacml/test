@@ -13,7 +13,13 @@ import (
 	"io/ioutil"
 	"crypto/md5"
 	"io"
+	"os/exec"
 )
+
+var resol = []string{} // resol=append(resol,"1920x1080")
+var rate = []float64{}
+var interlaced = []bool{} // interlaced=append(interlaced,true)
+var pal = []bool{}
 
 type SegCapt struct {
 	cmd1, cmd2	string
@@ -34,8 +40,9 @@ type SegCapt struct {
 
 func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *SegCapt {
 	seg := &SegCapt{
-		exe1: cmdline.Cmdline(""),
-		exe2: cmdline.Cmdline(""),
+		exe1: cmdline.Cmdline("ps ax"),
+		exe2: cmdline.Cmdline("ps ax"),
+		settings: settings,
 	}
 	seg.mu_seg.Lock()
 	defer seg.mu_seg.Unlock()
@@ -53,23 +60,21 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg.lastrecord_timestamp = time.Now().Unix()
 	seg.lastrecord_dur = 0
 	seg.semaforo = "G" // comenzamos en verde
+	seg.bmdinfo()
 	
 	// creamos el cmd1
 	modo := toInt(seg.settings["v_mode"])
-	seg.cmd1 = fmt.Sprintf("/usr/bin/capture -d 0 -m %d -V %s -A %d -v /tmp/video_fifo -a /tmp/audio_fifo", modo, seg.settings["v_input"], seg.settings["a_input"])
+	seg.cmd1 = fmt.Sprintf("/usr/bin/capture -d 0 -m %d -V %s -A %s -v /tmp/video_fifo -a /tmp/audio_fifo", modo, seg.settings["v_input"], seg.settings["a_input"])
 
 	// creamos el cmd2
 	var yadif, rv, outs string
-	var resol = []string{} // resol=append(resol,"1920x1080")
-	var rate = []float64{}
-	var interlaced = []bool{} // interlaced=append(interlaced,true)
 	var keyint int
 	output_video:= toInt(seg.settings["v_output"])
 	hvres := strings.Split(resol[modo],"x")
 	hres  := toInt(hvres[0])
 	vres  := toInt(hvres[1])
 	if interlaced[modo] {
-		yadif = " -vf 'yadif=3'"
+		yadif = " -vf yadif=3"
 		rv = fmt.Sprintf(" -r:v %.4f", 2.0*rate[modo])
 		keyint = int(4.0 * rate[modo])
 		outs = fmt.Sprintf("%dx%d", hres, vres/2)
@@ -86,11 +91,90 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 		case 2,3:
 			v_bitrate = 3000
 	}
-	seg.cmd2 = fmt.Sprintf("/usr/bin/avconv -video_size %s -framerate %.4f -pixel_format uyvy422 -f rawvideo -i /tmp/video_fifo -sample_rate 48k -channels 2 -f s16le -i /tmp/audio_fifo -pix_fmt yuv420p%s -c:v libx264 -b:v %dk -minrate:v %dk -maxrate:v %dk -bufsize:v 1835k -flags:v +cgop -profile:v high -x264-params level=4.1:keyint=%d%s -threads %d -af 'volume=volume=%sdB:precision=fixed' -c:a libfdk_aac -profile:a aac_he -b:a 128k -s %s -aspect %s -hls_time 10 -hls_list_size 3 %s/%s.m3u8",
+	seg.cmd2 = fmt.Sprintf("/usr/bin/avconv -video_size %s -framerate %.4f -pixel_format uyvy422 -f rawvideo -i /tmp/video_fifo -sample_rate 48k -channels 2 -f s16le -i /tmp/audio_fifo -pix_fmt yuv420p%s -c:v libx264 -b:v %dk -minrate:v %dk -maxrate:v %dk -bufsize:v 1835k -flags:v +cgop -profile:v high -x264-params level=4.1:keyint=%d%s -threads %d -af volume=volume=%sdB:precision=fixed -c:a libfdk_aac -profile:a aac_he -b:a 128k -s %s -aspect %s -hls_time 10 -hls_list_size 3 %s%s.m3u8",
 							resol[modo],rate[modo],yadif,v_bitrate,v_bitrate,v_bitrate,keyint,rv,runtime.NumCPU(),seg.settings["a_level"],outs,seg.settings["aspect_ratio"],seg.uploaddir,seg.fileupload)
 	
 	return seg
 }
+
+func (s *SegCapt) Print() {
+	fmt.Printf("[resol]=%v\n", resol)
+	fmt.Printf("[rate]=%v\n", rate)
+	fmt.Printf("[interlaced]=%v\n", interlaced)
+	fmt.Printf("[pal]=%v\n", pal)
+	fmt.Printf("[cmd1] %s\n\n[cmd2] %s\n",s.cmd1,s.cmd2)
+}
+
+func (s *SegCapt) bmdinfo() {
+	var name, modes, card bool
+	card = false
+	s.settings["cardname"] = ""
+	
+	cmd := exec.Command("/usr/bin/bmdinfo")
+	stdoutRead, _ := cmd.StdoutPipe()
+	reader := bufio.NewReader(stdoutRead)
+	cmd.Start()
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		line = strings.TrimRight(line, "\n")
+
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, "#ERROR") {
+			if !card {
+				s.settings["cardname"] = "NO_CARD"
+				break
+			}
+		} else if strings.Contains(line, "#NAME") {
+			name = true
+			modes = false
+			card = true
+		} else if strings.Contains(line, "#MODES input") {
+			name = false
+			modes = true
+		} else if strings.Contains(line, "#MODES output") {
+			name = false
+			modes = false
+		} else if strings.Contains(line, "#INPUT") {
+			name = false
+			modes = false
+		} else if strings.Contains(line, "#OUTPUT") {
+			name = false
+			modes = false
+		} else { // linea a interpretar
+			if name {
+				s.settings["cardname"] = line
+			} else if modes { // <option value="0" {{ if eq .mode "0" }}selected{{else}}{{end}}>NTSC</option>
+				item := strings.Split(line, ":")
+				resol = append(resol, item[2])
+				r, _ := strconv.ParseFloat(item[3], 64)
+				rate = append(rate, r)
+				// pal=pal(pal,true)
+				if strings.Contains(item[1], "PAL") {
+					pal = append(pal, true)
+				} else if strings.Contains(item[1], "NTSC") {
+					pal = append(pal, false)
+				} else if strings.Contains(item[1], "50") || strings.Contains(item[1], "25") {
+					pal = append(pal, true)
+				} else {
+					pal = append(pal, false)
+				}
+				// item[1] say i or p
+				if strings.Contains(item[1], "Progre") || strings.Contains(item[1], "p") { // progresivo
+					interlaced = append(interlaced, false)
+				} else { // entrelazado
+					interlaced = append(interlaced, true)
+				}
+			}
+		}
+	}
+	cmd.Wait()
+}
+
 
 //Function to know the state of the record at any moment
 func (s *SegCapt) IsRecording() bool {
@@ -119,14 +203,15 @@ func (s *SegCapt) Run(pub bool) error {
 
 	go s.command1(ch)
 	go s.command2(ch)
-	go s.contactServer()
+	go s.upload()
+	//go s.contactServer()
 	
 	return err
 }
 
 func (s *SegCapt) command1(ch chan int){ // capture
 	
-	fmt.Println(s.cmd1)
+	fmt.Println("[cmd1]",s.cmd1)
 	
 	for {
 		s.exe1 = cmdline.Cmdline(s.cmd1)
@@ -144,7 +229,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 				break;
 			}
 			line = strings.TrimRight(line,"\n")	
-			fmt.Printf("[cmd1] %s\n",line)
+			//fmt.Printf("[cmd1] %s\n",line)
 		}
 		s.exe1.Stop()
 		<- ch
@@ -152,7 +237,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 }
 
 func (s *SegCapt) command2(ch chan int){ // avconv
-	fmt.Println(s.cmd2)
+	fmt.Println("[cmd2]",s.cmd2)
 	var tiempo time.Time
 	var cmd2run bool
 	
@@ -208,13 +293,17 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 					s.nextrecord = s.lastrecord + 1
 				}
 				s.mu_seg.Unlock()
+				fmt.Printf("[cmd2] %s\n",line)
 			}
 			if strings.Contains(line, "EXTINF:") { // EXTINF:10   (int seconds)
 				dur:=0
 				fmt.Sscanf(line,"EXTINF:%d",&dur)
+				s.mu_seg.Lock()
 				s.lastrecord_dur = dur
+				s.mu_seg.Unlock()
+				fmt.Printf("[cmd2] %s\n",line)
 			}
-			fmt.Printf("[cmd2] %s\n",line)
+			//fmt.Printf("[cmd2] %s\n",line)
 		}
 		s.exe2.Stop()
 		s.mu_seg.Lock()
@@ -250,21 +339,27 @@ func (s *SegCapt) md5sum(filename string) string {
 // /usr/bin/curl -F segment=@mac_0.ts -F tv_id=2 -F filename=mac_0 -F bytes=16874 -F md5sum=eed91981eafe1106fe90c48148b250fb -F fvideo=h264 -F faudio=heaacv1 -F hres=1920 -F vres=1080 -F numfps=25 
 // -F denfps=0 -F vbitrate=2300 -F abitrate=128 -F block=prog -F next=pub -F duration=3500 -F timestamp=1430765872 -F mac=d4ae52d3ea66 -F semaforo=G "http://localhost/segments/upload.php"
 func (s *SegCapt) upload() {
-
+	var lastupload int
+	var uploadedok bool
+	
 	for{
 		s.mu_seg.Lock()
-		lastupload := s.lastrecord
-		s.mu_seg.Unlock()
+		// vamos a decidir si hay un segmento nuevo para subir, si no, hacemos continue
+		if (s.lastrecord >= 0) && (s.lastrecord != s.lastupload) { // podemos subir lastrecord
+			lastupload = s.lastrecord
+			s.mu_seg.Unlock()
+		}else{
+			s.mu_seg.Unlock()
+			time.Sleep(100 * time.Millisecond) // hacemos el continue si no hay nada nuevo
+			continue
+		}			
+		////////////////////////////////////////////////////////////////////////////
 		filetoupload := s.uploaddir + s.fileupload + fmt.Sprintf("%d", lastupload) + ".ts"
 		fileinfo,err := os.Stat(filetoupload)
 		if err != nil {
 			fmt.Println(err)
 		}
 
-
-		var resol = []string{} // resol=append(resol,"1920x1080")
-		var rate = []float64{}
-		var pal = []bool{}
 		output_video:= toInt(s.settings["v_output"])
 		modo := toInt(s.settings["v_mode"])
 		hvres := strings.Split(resol[modo],"x")
@@ -305,7 +400,12 @@ func (s *SegCapt) upload() {
 				fmt.Println("Fin del curl !!!")
 				break;
 			}
-			line = strings.TrimRight(line,"\n")	
+			line = strings.TrimRight(line,"\n")
+			if line == "OK" {
+				uploadedok = true
+			} else {
+				uploadedok = false
+			}
 			fmt.Printf("[curl] %s\n",line)
 		}
 		exe.Stop()
@@ -323,6 +423,12 @@ func (s *SegCapt) upload() {
 			default :
 				s.semaforo = "Y"
 		}
+		if !uploadedok {
+			s.semaforo = "R"
+			s.mu_seg.Unlock()
+			continue 
+		}
+		// el fichero ha subido bien, y nos metemos en el post-proceso normal
 		s.lastupload = lastupload
 		// borramos siempre el lastupload xq ya lo hemos subido
 		s.deletefile(s.lastupload)
