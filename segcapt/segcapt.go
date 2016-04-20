@@ -19,15 +19,16 @@ type SegCapt struct {
 	cmd1, cmd2	string
 	exe1, exe2	*cmdline.Exec
 	settings	map[string]string
-	fileupload	string
-	uploaddir	string
+	fileupload	string							// basename del fichero a subir que irá seguido de un número indice de segmento
+	uploaddir	string							// directorio RAMdisk donde se guardan los ficheros capturados listos para subir
 	recording	bool
 	uploading	bool
-	cutsegment	bool
-	lastrecord, lastupload, nextrecord int
-	lastrecord_dur int
-	lastrecord_timestamp int64
-	lastrecord_pub, nextrecord_pub bool
+	cutsegment	bool							// acaba de ocurrir un cutsegment por cambio PROGRAM <=> PUBLI (no natural)
+	lastrecord, lastupload, nextrecord int		// indice entero del ultimo segmento capturado y cerrado(lastrecord), ultimo subido(lastupload) y siguiente capturandose ahora mismo(nextrecord)
+	lastrecord_dur int							// duracion en segundos enteros del ultimo segmento capturado y cerrado
+	lastrecord_timestamp int64					// timestamp del comienzo del ultimo segmento capturado y cerrado
+	lastrecord_pub, nextrecord_pub bool			// true si es un segmento de publicidad, false si es un segmento de programa
+	semaforo	string							// R(red), Y(yellow), G(green)
 	mu_seg		sync.Mutex
 }
 
@@ -41,6 +42,17 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg.settings = settings
 	seg.fileupload = fileupload
 	seg.uploaddir = uploaddir
+	seg.recording = false
+	seg.uploading = false
+	seg.lastrecord = -1 // si < 0 significa que no hay segmento aun
+	seg.lastupload = -1 // si < 0 significa que no hay segmento aun
+	seg.nextrecord = -1
+	seg.lastrecord_pub = false
+	seg.nextrecord_pub = false
+	seg.cutsegment = false
+	seg.lastrecord_timestamp = time.Now().Unix()
+	seg.lastrecord_dur = 0
+	seg.semaforo = "G" // comenzamos en verde
 	
 	// creamos el cmd1
 	modo := toInt(seg.settings["v_mode"])
@@ -76,15 +88,6 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	}
 	seg.cmd2 = fmt.Sprintf("/usr/bin/avconv -video_size %s -framerate %.4f -pixel_format uyvy422 -f rawvideo -i /tmp/video_fifo -sample_rate 48k -channels 2 -f s16le -i /tmp/audio_fifo -pix_fmt yuv420p%s -c:v libx264 -b:v %dk -minrate:v %dk -maxrate:v %dk -bufsize:v 1835k -flags:v +cgop -profile:v high -x264-params level=4.1:keyint=%d%s -threads %d -af 'volume=volume=%sdB:precision=fixed' -c:a libfdk_aac -profile:a aac_he -b:a 128k -s %s -aspect %s -hls_time 10 -hls_list_size 3 %s/%s.m3u8",
 							resol[modo],rate[modo],yadif,v_bitrate,v_bitrate,v_bitrate,keyint,rv,runtime.NumCPU(),seg.settings["a_level"],outs,seg.settings["aspect_ratio"],seg.uploaddir,seg.fileupload)
-
-	seg.recording = false
-	seg.uploading = false
-	seg.lastrecord = -1 // si < 0 significa que no hay segmento aun
-	seg.lastupload = -1 // si < 0 significa que no hay segmento aun
-	seg.nextrecord = -1
-	seg.lastrecord_pub = false
-	seg.nextrecord_pub = false
-	seg.cutsegment = false
 	
 	return seg
 }
@@ -178,7 +181,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 		for{ // bucle de reproduccion normal
 			tiempo = time.Now()
 			if startofseg {
-				s.lastrecord_timestamp = tiempo.Unix()
+				s.lastrecord_timestamp = tiempo.Unix() // seconds from 1970-01-01 UTC
 				startofseg = false
 			}
 			line,err := mReader.ReadString('\n')
@@ -197,7 +200,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 			if strings.Contains(line, "EXT-X-SEGMENTFILE:") { // EXT-X-SEGMENTFILE:testing654757575.ts (fileupload = testing)
 				startofseg = true
 				s.mu_seg.Lock()
-				s.lastrecord = s.extractsegmentid(line)
+				fmt.Sscanf(line,fmt.Sprintf("EXT-X-SEGMENTFILE:%s%%d.ts",s.fileupload),&s.lastrecord)
 				if s.cutsegment { 
 					s.nextrecord = 0
 					s.cutsegment = false
@@ -205,6 +208,11 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 					s.nextrecord = s.lastrecord + 1
 				}
 				s.mu_seg.Unlock()
+			}
+			if strings.Contains(line, "EXTINF:") { // EXTINF:10   (int seconds)
+				dur:=0
+				fmt.Sscanf(line,"EXTINF:%d",&dur)
+				s.lastrecord_dur = dur
 			}
 			fmt.Printf("[cmd2] %s\n",line)
 		}
@@ -216,18 +224,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 	}
 }
 
-func (s *SegCapt) extractsegmentid(linea string) int {
-	var ret int
-
-	archivo  := strings.Split(linea, ":") // Separo por los dos puntos
-	unext    := strings.Split(archivo[1], ".") // Quito la extension
-	segmento := strings.Trim(unext[0], s.fileupload) //Quitamos el nombre del fichero
-	ret,_ = strconv.Atoi(segmento)
-	
-	return ret	
-}
-
-func (s *SegCapt) CutSegment(pub bool) error {
+func (s *SegCapt) CutSegment(pub bool) error { // pub=true si entramos en publicidad, pub=false si salimos de la publicidad con este corte de segmento
 	s.mu_seg.Lock()
 	s.cutsegment = true // ha ocurrido un corte de segmento (no dice el tipo del corte)
 	s.lastrecord_pub = !pub
@@ -265,57 +262,42 @@ func (s *SegCapt) upload() {
 		}
 
 
-	var resol = []string{} // resol=append(resol,"1920x1080")
-	var rate = []float64{}
-	var pal = []bool{}
-	output_video:= toInt(s.settings["v_output"])
-	modo := toInt(s.settings["v_mode"])
-	hvres := strings.Split(resol[modo],"x")
-	hres  := hvres[0]
-	vres  := hvres[1]
-	var v_bitrate int
-	switch output_video {
-		case 0: 
-			v_bitrate = 1000
-		case 1:
-			v_bitrate = 2000
-		case 2,3:
-			v_bitrate = 3000
-	}
-	numfps := int(rate[modo])
-	denfps := 0
-	if !pal[modo] { denfps = 1 }
-	block := "prog"
-	if s.lastrecord_pub { block = "pub" }
-	next := "prog"
-	if s.nextrecord_pub { next = "pub" }
+		var resol = []string{} // resol=append(resol,"1920x1080")
+		var rate = []float64{}
+		var pal = []bool{}
+		output_video:= toInt(s.settings["v_output"])
+		modo := toInt(s.settings["v_mode"])
+		hvres := strings.Split(resol[modo],"x")
+		hres  := hvres[0]
+		vres  := hvres[1]
+		var v_bitrate int
+		switch output_video {
+			case 0: 
+				v_bitrate = 1000
+			case 1:
+				v_bitrate = 2000
+			case 2,3:
+				v_bitrate = 3000
+		}
+		numfps := int(rate[modo])
+		denfps := 0
+		if !pal[modo] { denfps = 1 }
+		block := "prog"
+		if s.lastrecord_pub { block = "pub" }
+		next := "prog"
+		if s.nextrecord_pub { next = "pub" }
 		/////////////////////////////////////////////////////////////////////////////////////////////
-		// fileupload, uploaddir
-		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=2 -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=h264 -F faudio=heaacv1 -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=128 -F block=%s -F next=%s -F duration=3500 -F timestamp=1430765872 -F mac=d4ae52d3ea66 -F semaforo=G http://localhost/segments/upload.php",
-										filetoupload, s.fileupload + fmt.Sprintf("%d", lastupload),fileinfo.Size(), s.md5sum(filetoupload),hres,vres,numfps,denfps,v_bitrate,block,next)
-
-
-
-
-
-
+		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=2 -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=h264 -F faudio=heaacv1 -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=128 -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
+										filetoupload, s.fileupload + fmt.Sprintf("%d", lastupload),fileinfo.Size(), s.md5sum(filetoupload),hres,vres,numfps,denfps,v_bitrate,block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
+		fmt.Printf("[curl] %s\n",lineacomandos)
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		exe := cmdline.Cmdline(lineacomandos)
-		/////////////////////////////////////////////////////////////////////////////////////////////
-		// fileupload, uploaddir
-
-
-
-
-
-
-
-		/////////////////////////////////////////////////////////////////////////////////////////////
 		lectura,errL := exe.StdoutPipe()
 		if errL != nil{
 			fmt.Println(errL)
 		}
 		mReader := bufio.NewReader(lectura)
+		time_semaforo := time.Now()
 		exe.Start()
 		for{ // bucle de reproduccion normal
 			line,err := mReader.ReadString('\n')
@@ -327,7 +309,20 @@ func (s *SegCapt) upload() {
 			fmt.Printf("[curl] %s\n",line)
 		}
 		exe.Stop()
+		dur_semaforo := time.Since(time_semaforo).Seconds()
+
 		s.mu_seg.Lock()
+		// decidir el color del semaforo
+		var color float64
+		color = float64(dur_semaforo)/float64(s.lastrecord_dur)
+		switch {
+			case color > 1.2 :
+				s.semaforo = "R"
+			case color < 0.8 :
+				s.semaforo = "G"
+			default :
+				s.semaforo = "Y"
+		}
 		s.lastupload = lastupload
 		// borramos siempre el lastupload xq ya lo hemos subido
 		s.deletefile(s.lastupload)
