@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/isaacml/test/segcapt"
+//	"time"
 )
 
 func main(){
@@ -17,7 +18,9 @@ func main(){
 	}
 	
 	seg := segcapt.SegmentCapturer("mac_","/var/segments/",settings)
-	seg.Run(false)  
+	seg.Run(false) 
+//	time.Sleep(95 * time.Second)
+//	seg.CutSegment(true)
 	
 	for {} // infinito
 	

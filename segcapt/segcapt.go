@@ -10,9 +10,6 @@ import (
 	"strconv"
 	"os"
 	"runtime"
-	"io/ioutil"
-	"crypto/md5"
-	"io"
 	"os/exec"
 )
 
@@ -42,7 +39,7 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg := &SegCapt{
 		exe1: cmdline.Cmdline("ps ax"),
 		exe2: cmdline.Cmdline("ps ax"),
-		settings: settings,
+//		settings: settings,
 	}
 	seg.mu_seg.Lock()
 	defer seg.mu_seg.Unlock()
@@ -222,6 +219,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 		mReader := bufio.NewReader(lectura)
 		<- ch
 		s.exe1.Start()
+
 		for{ // bucle de reproduccion normal
 			line,err := mReader.ReadString('\n')
 			if err != nil {
@@ -231,6 +229,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 			line = strings.TrimRight(line,"\n")	
 			//fmt.Printf("[cmd1] %s\n",line)
 		}
+
 		s.exe1.Stop()
 		<- ch
 	}
@@ -238,7 +237,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 
 func (s *SegCapt) command2(ch chan int){ // avconv
 	fmt.Println("[cmd2]",s.cmd2)
-	var tiempo time.Time
+	var tiempo int
 	var cmd2run bool
 	
 	for {
@@ -249,13 +248,14 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 			fmt.Println(errL)
 		}
 		mReader := bufio.NewReader(lectura)
-		tiempo = time.Now()
+		tiempo = time.Now().Second()
 		go func() {
 			for {
-				if time.Since(tiempo).Seconds() > 2.0 {
-					s.exe2.Stop()
+				if (time.Now().Second()-tiempo) > 2 {
+					s.exe2.Stop() // SIGKILL
 					break
 				}
+				time.Sleep(1 * time.Second)
 			}
 		}()
 		s.exe2.Start()
@@ -263,18 +263,21 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 		s.recording = true
 		s.mu_seg.Unlock()
 		startofseg := true
+
 		for{ // bucle de reproduccion normal
-			tiempo = time.Now()
+			tiempo = time.Now().Second()//; time.Sleep(5 * time.Second)
 			if startofseg {
-				s.lastrecord_timestamp = tiempo.Unix() // seconds from 1970-01-01 UTC
+				s.mu_seg.Lock()
+				s.lastrecord_timestamp = time.Now().Unix() // seconds from 1970-01-01 UTC
+				s.mu_seg.Unlock()
 				startofseg = false
 			}
-			line,err := mReader.ReadString('\n')
+			line,err := mReader.ReadString('\n') // bloquea
 			if err != nil {
 				fmt.Println("Fin del cmd2 !!!")
 				break;
 			}
-			line = strings.TrimRight(line,"\n")	
+			line = strings.TrimRight(line,"\n")
 			if strings.Contains(line, "built on"){
 				if !cmd2run {
 					//time.Sleep(3*time.Second)
@@ -286,7 +289,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 				startofseg = true
 				s.mu_seg.Lock()
 				fmt.Sscanf(line,fmt.Sprintf("EXT-X-SEGMENTFILE:%s%%d.ts",s.fileupload),&s.lastrecord)
-				if s.cutsegment { 
+				if s.cutsegment {
 					s.nextrecord = 0
 					s.cutsegment = false
 				} else {
@@ -305,6 +308,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 			}
 			//fmt.Printf("[cmd2] %s\n",line)
 		}
+
 		s.exe2.Stop()
 		s.mu_seg.Lock()
 		s.recording = false
@@ -319,7 +323,7 @@ func (s *SegCapt) CutSegment(pub bool) error { // pub=true si entramos en public
 	s.lastrecord_pub = !pub
 	s.nextrecord_pub = pub
 	s.mu_seg.Unlock()
-	return s.exe2.Stop()
+	return s.exe2.SigInt() // envio un Ctrl-C al avconv cmd2
 }
 
 func (s *SegCapt) contactServer() error {
@@ -330,14 +334,11 @@ func (s *SegCapt) contactServer() error {
 
 // equivalent to md5sum -b filename
 func (s *SegCapt) md5sum(filename string) string {
-	buf,_ := ioutil.ReadFile(filename)
-	h := md5.New()
-	io.WriteString(h, string(buf))
-	return fmt.Sprintf("%x", h.Sum(nil))
+	out,_ := exec.Command("/bin/sh","-c","md5sum -b " + filename + " | awk '{print $1}'").CombinedOutput()
+	
+	return strings.TrimSpace(string(out))
 }
 
-// /usr/bin/curl -F segment=@mac_0.ts -F tv_id=2 -F filename=mac_0 -F bytes=16874 -F md5sum=eed91981eafe1106fe90c48148b250fb -F fvideo=h264 -F faudio=heaacv1 -F hres=1920 -F vres=1080 -F numfps=25 
-// -F denfps=0 -F vbitrate=2300 -F abitrate=128 -F block=prog -F next=pub -F duration=3500 -F timestamp=1430765872 -F mac=d4ae52d3ea66 -F semaforo=G "http://localhost/segments/upload.php"
 func (s *SegCapt) upload() {
 	var lastupload int
 	var uploadedok bool
@@ -347,19 +348,19 @@ func (s *SegCapt) upload() {
 		// vamos a decidir si hay un segmento nuevo para subir, si no, hacemos continue
 		if (s.lastrecord >= 0) && (s.lastrecord != s.lastupload) { // podemos subir lastrecord
 			lastupload = s.lastrecord
-			s.mu_seg.Unlock()
 		}else{
 			s.mu_seg.Unlock()
-			time.Sleep(100 * time.Millisecond) // hacemos el continue si no hay nada nuevo
+			time.Sleep(1000 * time.Millisecond) // hacemos el continue si no hay nada nuevo 100 ms)
 			continue
-		}			
+		}
 		////////////////////////////////////////////////////////////////////////////
 		filetoupload := s.uploaddir + s.fileupload + fmt.Sprintf("%d", lastupload) + ".ts"
-		fileinfo,err := os.Stat(filetoupload)
+		fileinfo,err := os.Stat(filetoupload) // fileinfo.Size()
 		if err != nil {
 			fmt.Println(err)
 		}
-
+		filesize := fileinfo.Size()
+		
 		output_video:= toInt(s.settings["v_output"])
 		modo := toInt(s.settings["v_mode"])
 		hvres := strings.Split(resol[modo],"x")
@@ -382,9 +383,13 @@ func (s *SegCapt) upload() {
 		next := "prog"
 		if s.nextrecord_pub { next = "pub" }
 		/////////////////////////////////////////////////////////////////////////////////////////////
+		b := s.fileupload + fmt.Sprintf("%d", lastupload)
+		c := s.md5sum(filetoupload)
 		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=2 -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=h264 -F faudio=heaacv1 -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=128 -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
-										filetoupload, s.fileupload + fmt.Sprintf("%d", lastupload),fileinfo.Size(), s.md5sum(filetoupload),hres,vres,numfps,denfps,v_bitrate,block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
+										filetoupload, b ,filesize, c,hres,vres,numfps,denfps,v_bitrate,block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
+
 		fmt.Printf("[curl] %s\n",lineacomandos)
+		s.mu_seg.Unlock()
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		exe := cmdline.Cmdline(lineacomandos)
 		lectura,errL := exe.StdoutPipe()
@@ -402,8 +407,10 @@ func (s *SegCapt) upload() {
 			}
 			line = strings.TrimRight(line,"\n")
 			if line == "OK" {
+				fmt.Println("Uploaded OK")
 				uploadedok = true
 			} else {
+				fmt.Println("Uploaded BAD")
 				uploadedok = false
 			}
 			fmt.Printf("[curl] %s\n",line)
@@ -430,6 +437,7 @@ func (s *SegCapt) upload() {
 		}
 		// el fichero ha subido bien, y nos metemos en el post-proceso normal
 		s.lastupload = lastupload
+/*
 		// borramos siempre el lastupload xq ya lo hemos subido
 		s.deletefile(s.lastupload)
 		// borramos el resto de ficheros, que no sean: lastrecord, nextrecord
@@ -447,12 +455,15 @@ func (s *SegCapt) upload() {
 				}
 				delete(ficheros,fmt.Sprintf("%s%d.ts",s.fileupload,s.lastrecord))
 				delete(ficheros,fmt.Sprintf("%s%d.ts",s.fileupload,s.nextrecord))
+				delete(ficheros,fmt.Sprintf("%s.m3u8",s.fileupload)) // que no borre el .m3u8
 				for k,_:=range ficheros {
+					fmt.Println("[delete file]",k)
 					os.Remove(fmt.Sprintf("%s%s",s.uploaddir,k))
 				}
 			}
 			file.Close()
-		}			
+		}
+*/			
 		s.mu_seg.Unlock()
 		
 	}
