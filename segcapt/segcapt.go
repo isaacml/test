@@ -437,7 +437,7 @@ func (s *SegCapt) upload() {
 		}
 		// el fichero ha subido bien, y nos metemos en el post-proceso normal
 		s.lastupload = lastupload
-/*
+
 		// borramos siempre el lastupload xq ya lo hemos subido
 		s.deletefile(s.lastupload)
 		// borramos el resto de ficheros, que no sean: lastrecord, nextrecord
@@ -463,7 +463,6 @@ func (s *SegCapt) upload() {
 			}
 			file.Close()
 		}
-*/			
 		s.mu_seg.Unlock()
 		
 	}

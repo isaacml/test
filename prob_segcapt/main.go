@@ -18,7 +18,7 @@ func main(){
 	}
 	
 	seg := segcapt.SegmentCapturer("mac_","/var/segments/",settings)
-	seg.Run(false) 
+	seg.Run(false)
 //	time.Sleep(95 * time.Second)
 //	seg.CutSegment(true)
 	
