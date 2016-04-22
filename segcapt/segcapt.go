@@ -385,11 +385,11 @@ func (s *SegCapt) upload() {
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		b := s.fileupload + fmt.Sprintf("%d", lastupload)
 		c := s.md5sum(filetoupload)
-		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=2 -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=h264 -F faudio=heaacv1 -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=128 -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
-										filetoupload, b ,filesize, c,hres,vres,numfps,denfps,v_bitrate,block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
+		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=%s -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=%s -F faudio=%s -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=%s -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
+										filetoupload ,s.settings["tv_id"] ,b ,filesize, c, s.settings["fvideo"], s.settings["faudio"],hres,vres,numfps,denfps,v_bitrate, s.settings["abitrate"],block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
 
-		fmt.Printf("[curl] %s\n",lineacomandos)
 		s.mu_seg.Unlock()
+		fmt.Printf("[curl] %s\n",lineacomandos)
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		exe := cmdline.Cmdline(lineacomandos)
 		lectura,errL := exe.StdoutPipe()
@@ -478,4 +478,30 @@ func toInt(cant string) (res int) {
 	return
 }
 
+// ls -1 -p filter
+// ejemplo: filter = /var/segments/testing*.ts
+func listfiles(filter string) []string {
+  var arreglo = []string {}
+  out:= exec.Command("/bin/sh","-c","ls -1 -p "+ filter)
+  leer, err := out.StdoutPipe()
+  if err != nil{
+    fmt.Println(err)
+  }
+  mReader := bufio.NewReader(leer)
+  out.Start()
+  for{
+    line,err := mReader.ReadString('\n')
+    if err != nil{
+      break
+    }
+    if line == "\n" {
+      break
+    }
+    line = strings.TrimRight(line,"\n")  
+    arreglo = append(arreglo, line)
+  }
+  out.Wait()
+  
+  return arreglo
+}
 
