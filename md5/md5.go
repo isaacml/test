@@ -1,15 +1,13 @@
 package main
 
-import ("fmt";"io";"io/ioutil";"crypto/md5")
+import ("fmt";"os/exec";"strings")
 
 func main(){
-	fmt.Println(md5sum("/home/isaac/sample.bin"))
+	fmt.Printf("-%s-\n",md5sum("/home/isaac/sample.bin"))
 }
 
+// equivalent to md5sum -b filename
 func md5sum(filename string) string {
-  buf,_ := ioutil.ReadFile(filename)  ///-P
-  h := md5.New()
-  io.WriteString(h, string(buf))
-  out := fmt.Sprintf("%x", h.Sum(nil)) // out es un string con el md5sum -b /etc/init.d/streamixserver
-  return out
+  out,_ := exec.Command("/bin/sh","-c","md5sum -b "+ filename +" | awk '{print $1}'").CombinedOutput()
+  return strings.TrimSpace(string(out))
 }
