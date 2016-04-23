@@ -433,6 +433,7 @@ func (s *SegCapt) upload() {
 		if !uploadedok {
 			s.semaforo = "R"
 			s.mu_seg.Unlock()
+			time.Sleep(1 * time.Second) // fail on upload, wait for 1 second until next attempt
 			continue 
 		}
 		// el fichero ha subido bien, y nos metemos en el post-proceso normal
