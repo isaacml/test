@@ -13,10 +13,12 @@ import (
 	"os/exec"
 )
 
-var resol = []string{} // resol=append(resol,"1920x1080")
-var rate = []float64{}
-var interlaced = []bool{} // interlaced=append(interlaced,true)
-var pal = []bool{}
+var(
+	resol = []string{} // resol=append(resol,"1920x1080")
+	rate = []float64{}
+	interlaced = []bool{} // interlaced=append(interlaced,true)
+	pal = []bool{}
+)
 
 type SegCapt struct {
 	cmd1, cmd2	string
@@ -24,14 +26,14 @@ type SegCapt struct {
 	settings	map[string]string
 	fileupload	string							// basename del fichero a subir que irá seguido de un número indice de segmento
 	uploaddir	string							// directorio RAMdisk donde se guardan los ficheros capturados listos para subir
-	recording	bool
-	uploading	bool
+	recording	bool							// 
+	uploading	bool							// 
 	cutsegment	bool							// acaba de ocurrir un cutsegment por cambio PROGRAM <=> PUBLI (no natural)
 	lastrecord, lastupload, nextrecord int		// indice entero del ultimo segmento capturado y cerrado(lastrecord), ultimo subido(lastupload) y siguiente capturandose ahora mismo(nextrecord)
 	lastrecord_dur int							// duracion en segundos enteros del ultimo segmento capturado y cerrado
 	lastrecord_timestamp int64					// timestamp del comienzo del ultimo segmento capturado y cerrado
 	lastrecord_pub, nextrecord_pub bool			// true si es un segmento de publicidad, false si es un segmento de programa
-	semaforo	string							// R(red), Y(yellow), G(green)
+	semaforo	string							// R(red), Y(yellow), G(green) upload speed
 	mu_seg		sync.Mutex
 }
 
@@ -50,7 +52,7 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg.uploading = false
 	seg.lastrecord = -1 // si < 0 significa que no hay segmento aun
 	seg.lastupload = -1 // si < 0 significa que no hay segmento aun
-	seg.nextrecord = -1
+	seg.nextrecord = -1 // si < 0 significa que no hay segmento aun
 	seg.lastrecord_pub = false
 	seg.nextrecord_pub = false
 	seg.cutsegment = false
