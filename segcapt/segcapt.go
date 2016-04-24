@@ -23,7 +23,7 @@ var(
 type SegCapt struct {
 	cmd1, cmd2	string
 	exe1, exe2	*cmdline.Exec
-	settings	map[string]string
+	settings	map[string]string				// read-only map
 	fileupload	string							// basename del fichero a subir que irá seguido de un número indice de segmento
 	uploaddir	string							// directorio RAMdisk donde se guardan los ficheros capturados listos para subir
 	recording	bool							// 
