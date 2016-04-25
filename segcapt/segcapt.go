@@ -387,8 +387,8 @@ func (s *SegCapt) upload() {
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		b := s.fileupload + fmt.Sprintf("%d", lastupload)
 		c := s.md5sum(filetoupload)
-		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F tv_id=%s -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=%s -F faudio=%s -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=%s -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
-										filetoupload ,s.settings["tv_id"] ,b ,filesize, c, s.settings["fvideo"], s.settings["faudio"],hres,vres,numfps,denfps,v_bitrate, s.settings["abitrate"],block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
+		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F basename=%s -F tv_id=%s -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=%s -F faudio=%s -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=%s -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
+										filetoupload ,s.fileupload, s.settings["tv_id"] ,b ,filesize, c, s.settings["fvideo"], s.settings["faudio"],hres,vres,numfps,denfps,v_bitrate, s.settings["abitrate"],block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
 
 		s.mu_seg.Unlock()
 		fmt.Printf("[curl] %s\n",lineacomandos)
