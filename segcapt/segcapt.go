@@ -27,7 +27,6 @@ type SegCapt struct {
 	fileupload	string							// basename del fichero a subir que irá seguido de un número indice de segmento
 	uploaddir	string							// directorio RAMdisk donde se guardan los ficheros capturados listos para subir
 	recording	bool							// 
-	uploading	bool							// 
 	cutsegment	bool							// acaba de ocurrir un cutsegment por cambio PROGRAM <=> PUBLI (no natural)
 	lastrecord, lastupload, nextrecord int		// indice entero del ultimo segmento capturado y cerrado(lastrecord), ultimo subido(lastupload) y siguiente capturandose ahora mismo(nextrecord)
 	lastrecord_dur int							// duracion en segundos enteros del ultimo segmento capturado y cerrado
@@ -41,7 +40,6 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg := &SegCapt{
 		exe1: cmdline.Cmdline("ps ax"),
 		exe2: cmdline.Cmdline("ps ax"),
-//		settings: settings,
 	}
 	seg.mu_seg.Lock()
 	defer seg.mu_seg.Unlock()
@@ -49,7 +47,6 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg.fileupload = fileupload
 	seg.uploaddir = uploaddir
 	seg.recording = false
-	seg.uploading = false
 	seg.lastrecord = -1 // si < 0 significa que no hay segmento aun
 	seg.lastupload = -1 // si < 0 significa que no hay segmento aun
 	seg.nextrecord = -1 // si < 0 significa que no hay segmento aun
@@ -96,23 +93,16 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	return seg
 }
 
-func (s *SegCapt) Print() {
-	fmt.Printf("[resol]=%v\n", resol)
-	fmt.Printf("[rate]=%v\n", rate)
-	fmt.Printf("[interlaced]=%v\n", interlaced)
-	fmt.Printf("[pal]=%v\n", pal)
-	fmt.Printf("[cmd1] %s\n\n[cmd2] %s\n",s.cmd1,s.cmd2)
-}
-
 func (s *SegCapt) bmdinfo() {
 	var name, modes, card bool
 	card = false
-	s.settings["cardname"] = ""
 	
 	cmd := exec.Command("/usr/bin/bmdinfo")
 	stdoutRead, _ := cmd.StdoutPipe()
 	reader := bufio.NewReader(stdoutRead)
 	cmd.Start()
+	s.mu_seg.Lock()
+	defer s.mu_seg.Unlock()
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -183,14 +173,6 @@ func (s *SegCapt) IsRecording() bool {
 	return s.recording  
 }
 
-//Function to know the state of the upload at any moment
-func (s *SegCapt) IsUploading() bool {
-	s.mu_seg.Lock()
-	defer s.mu_seg.Unlock()
-	
-	return s.uploading  
-}
-
 func (s *SegCapt) Run(pub bool) error {
 	var err error
 	ch := make(chan int)
@@ -210,7 +192,7 @@ func (s *SegCapt) Run(pub bool) error {
 
 func (s *SegCapt) command1(ch chan int){ // capture
 	
-	fmt.Println("[cmd1]",s.cmd1)
+	//fmt.Println("[cmd1]",s.cmd1)
 	
 	for {
 		s.exe1 = cmdline.Cmdline(s.cmd1)
@@ -238,7 +220,7 @@ func (s *SegCapt) command1(ch chan int){ // capture
 }
 
 func (s *SegCapt) command2(ch chan int){ // avconv
-	fmt.Println("[cmd2]",s.cmd2)
+	//fmt.Println("[cmd2]",s.cmd2)
 	var tiempo int
 	var cmd2run bool
 	
@@ -387,7 +369,8 @@ func (s *SegCapt) upload() {
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		b := s.fileupload + fmt.Sprintf("%d", lastupload)
 		c := s.md5sum(filetoupload)
-		lineacomandos := fmt.Sprintf("/usr/bin/curl -F segment=@%s -F basename=%s -F tv_id=%s -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=%s -F faudio=%s -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=%s -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
+		// timeout transfer = 20 sec ; limit-rate = 625 KB/sec = 5 Mbps
+		lineacomandos := fmt.Sprintf("/usr/bin/curl --limit-rate 625K -m 20 -F segment=@%s -F basename=%s -F tv_id=%s -F filename=%s -F bytes=%d -F md5sum=%s -F fvideo=%s -F faudio=%s -F hres=%s -F vres=%s -F numfps=%d -F denfps=%d -F vbitrate=%d -F abitrate=%s -F block=%s -F next=%s -F duration=%d -F timestamp=%d -F mac=%s -F semaforo=%s http://%s/upload.cgi",
 										filetoupload ,s.fileupload, s.settings["tv_id"] ,b ,filesize, c, s.settings["fvideo"], s.settings["faudio"],hres,vres,numfps,denfps,v_bitrate, s.settings["abitrate"],block,next,s.lastrecord_dur,s.lastrecord_timestamp,s.settings["mac"],s.semaforo,s.settings["ip_upload"])
 
 		s.mu_seg.Unlock()
@@ -436,7 +419,7 @@ func (s *SegCapt) upload() {
 			s.semaforo = "R"
 			s.mu_seg.Unlock()
 			time.Sleep(1 * time.Second) // fail on upload, wait for 1 second until next attempt
-			continue 
+			continue
 		}
 		// el fichero ha subido bien, y nos metemos en el post-proceso normal
 		s.lastupload = lastupload
