@@ -26,7 +26,8 @@ type SegCapt struct {
 	settings	map[string]string				// read-only map
 	fileupload	string							// basename del fichero a subir que irá seguido de un número indice de segmento
 	uploaddir	string							// directorio RAMdisk donde se guardan los ficheros capturados listos para subir
-	recording	bool							// 
+	recording	bool							//
+	stopped		bool							// capture and upload completely stopped or runnning
 	cutsegment	bool							// acaba de ocurrir un cutsegment por cambio PROGRAM <=> PUBLI (no natural)
 	lastrecord, lastupload, nextrecord int		// indice entero del ultimo segmento capturado y cerrado(lastrecord), ultimo subido(lastupload) y siguiente capturandose ahora mismo(nextrecord)
 	lastrecord_dur int							// duracion en segundos enteros del ultimo segmento capturado y cerrado
@@ -52,6 +53,7 @@ func SegmentCapturer(fileupload, uploaddir string, settings map[string]string) *
 	seg.nextrecord = -1 // si < 0 significa que no hay segmento aun
 	seg.lastrecord_pub = false
 	seg.nextrecord_pub = false
+	seg.stopped = true // creamos el objeto parado
 	seg.cutsegment = false
 	seg.lastrecord_timestamp = time.Now().Unix()
 	seg.lastrecord_dur = 0
@@ -178,6 +180,7 @@ func (s *SegCapt) Run(pub bool) error {
 	s.mu_seg.Lock()
 	s.lastrecord_pub = pub
 	s.nextrecord_pub = pub
+	s.stopped = false // comienza a correr
 	s.mu_seg.Unlock()
 
 	go s.command1(ch)
@@ -186,6 +189,29 @@ func (s *SegCapt) Run(pub bool) error {
 	//go s.contactServer()
 	
 	return err
+}
+
+func (s *SegCapt) Stop() error {
+	var err error
+	
+	s.mu_seg.Lock()
+	defer s.mu_seg.Unlock()
+	s.stopped = true
+	err1 := s.exe1.Stop()
+	err2 := s.exe2.Stop()
+	if err1 != nil || err2 != nil {
+		err = fmt.Errorf("segcapt: STOP_ERROR")
+	}
+	
+	return err
+}
+
+// devuelve el status de: recording, stopped, lastrecord_pub, nextrecord_pub, semaforo
+func (s *SegCapt) Status() (bool, bool, bool, bool, string){
+	s.mu_seg.Lock()
+	defer s.mu_seg.Unlock()
+	
+	return s.recording,s.stopped,s.lastrecord_pub,s.nextrecord_pub,s.semaforo
 }
 
 func (s *SegCapt) command1(ch chan int){ // capture
@@ -211,8 +237,11 @@ func (s *SegCapt) command1(ch chan int){ // capture
 			line = strings.TrimRight(line,"\n")	
 			//fmt.Printf("[cmd1] %s\n",line)
 		}
-
+		
 		s.exe1.Stop()
+		s.mu_seg.Lock()
+		if s.stopped { break }
+		s.mu_seg.Unlock()
 		<- ch
 	}
 }
@@ -295,6 +324,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 		s.exe2.Stop()
 		s.mu_seg.Lock()
 		s.recording = false
+		if s.stopped { break }
 		s.mu_seg.Unlock()
 		ch <- 1
 	}
@@ -328,6 +358,7 @@ func (s *SegCapt) upload() {
 	
 	for{
 		s.mu_seg.Lock()
+		if s.stopped { break }
 		// vamos a decidir si hay un segmento nuevo para subir, si no, hacemos continue
 		if (s.lastrecord >= 0) && (s.lastrecord != s.lastupload) { // podemos subir lastrecord
 			lastupload = s.lastrecord
