@@ -101,8 +101,6 @@ func (s *SegCapt) bmdinfo() {
 	stdoutRead, _ := cmd.StdoutPipe()
 	reader := bufio.NewReader(stdoutRead)
 	cmd.Start()
-	s.mu_seg.Lock()
-	defer s.mu_seg.Unlock()
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -277,6 +275,7 @@ func (s *SegCapt) command2(ch chan int){ // avconv
 					s.nextrecord = 0
 					s.cutsegment = false
 				} else {
+					s.lastrecord_pub = s.nextrecord_pub
 					s.nextrecord = s.lastrecord + 1
 				}
 				s.mu_seg.Unlock()
