@@ -4,9 +4,9 @@ import (
 	"fmt"
 )
 
-func main(){
+func main() {
 	pub := true
-	
+
 	fmt.Printf("Hello = %v", !pub)
 
 }
