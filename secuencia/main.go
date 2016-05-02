@@ -25,7 +25,7 @@ func main() {
 	}
 	defer fw.Close()
 	for _, v := range segments {
-		fr, err := os.Open(v)
+		fr, err := os.Open(v) // read-only
 		if err != nil {
 			log.Fatalln(err)
 		}
