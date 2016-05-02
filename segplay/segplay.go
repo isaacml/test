@@ -12,8 +12,8 @@ import (
 type SegPlay struct {
 	cmdomx								string
 	exe									*cmdline.Exec
-	exe2									*cmdline.Exec
-	mediawriter							*bufio.Writer					// por aqui puedo enviar caracteres al omxplayer
+	exe2								*cmdline.Exec
+//	mediawriter							*bufio.Writer					// por aqui puedo enviar caracteres al omxplayer
 	settings							map[string]string				// read-only map
 	downloaddir							string							// directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
 	pubdir								string							// directorio del HD donde se guardan los ficheros de publicidad locales
@@ -30,7 +30,8 @@ type SegPlay struct {
 
 func SegmentPlayer(pubdir, downloaddir string, settings map[string]string) *SegPlay {
 	seg := &SegPlay{
-		exe: cmdline.Cmdline("ps ax"),
+//		exe: cmdline.Cmdline("ps ax"),
+//		exe2: cmdline.Cmdline("ps ax"),
 	}
 	seg.mu_seg.Lock()
 	defer seg.mu_seg.Unlock()
@@ -51,7 +52,7 @@ func SegmentPlayer(pubdir, downloaddir string, settings map[string]string) *SegP
 	
 	var overscan string
 	if seg.settings["overscan"] == "1" {
-		fmt.Sprintf(" --win %s,%s,%s,%s",seg.settings["x0"],seg.settings["y0"],seg.settings["x1"],seg.settings["y1"])
+		overscan = fmt.Sprintf(" --win %s,%s,%s,%s",seg.settings["x0"],seg.settings["y0"],seg.settings["x1"],seg.settings["y1"])
 	}
 	vol := toInt(seg.settings["vol"])
 	// creamos el cmdomx
@@ -72,7 +73,7 @@ func (s *SegPlay) Run() error {
 	s.running = true // comienza a correr
 	s.mu_seg.Unlock()
 
-	go s.command1()
+//	go s.command1()
 	go s.command2()
 	go s.director() // envia segmentos a /tmp/fifo1 cuando s.playing && s.restamping 
 	
@@ -105,12 +106,12 @@ func (s *SegPlay) command1(){ // omxplayer
 		}
 		mReader := bufio.NewReader(lectura)
 
-		stdinWrite,err := s.exe.StdinPipe()
+/*		stdinWrite,err := s.exe.StdinPipe()
 		if err != nil{
 			fmt.Println(err)
 		}
 		s.mediawriter = bufio.NewWriter(stdinWrite)	
-		
+*/		
 		s.exe.Start()
 
 		for{ // bucle de reproduccion normal
@@ -140,13 +141,18 @@ func (s *SegPlay) command1(){ // omxplayer
 func (s *SegPlay) command2(){ // ffmpeg
 	for {
 		s.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
+		fmt.Println("[cmd2] - 1")
 		lectura,err := s.exe2.StderrPipe()
+		fmt.Println("[cmd2] - 11")
 		if err != nil{
 			fmt.Println(err)
 		}
+		fmt.Println("[cmd2] - 12")
 		mReader := bufio.NewReader(lectura)
+		fmt.Println("[cmd2] - 2")
 	
 		s.exe2.Start()
+		fmt.Println("[cmd2] - 3")
 
 		for{ // bucle de reproduccion normal
 			line,err := mReader.ReadString('\n')
@@ -169,6 +175,7 @@ func (s *SegPlay) command2(){ // ffmpeg
 		s.restamping = false
 		if !s.running { break }
 		s.mu_seg.Unlock()
+		fmt.Println("[cmd2] - 4")
 	}
 }
 
