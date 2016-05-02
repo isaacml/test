@@ -15,7 +15,7 @@ func main() {
 	}
 
 	if len(os.Args) != 2 {
-		fmt.Printf("Usage:\n\n\t%s /tmp/outputmix.ts\n\n",os.Args[0])
+		fmt.Printf("Usage:\n\n\t%s /tmp/outputmix.ts\n\n", os.Args[0])
 		os.Exit(1)
 	}
 	fmt.Println("Comenzamos ...")
