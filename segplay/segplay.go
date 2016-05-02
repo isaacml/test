@@ -12,6 +12,7 @@ import (
 type SegPlay struct {
 	cmdomx								string
 	exe									*cmdline.Exec
+	exe2									*cmdline.Exec
 	mediawriter							*bufio.Writer					// por aqui puedo enviar caracteres al omxplayer
 	settings							map[string]string				// read-only map
 	downloaddir							string							// directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
@@ -78,6 +79,23 @@ func (s *SegPlay) Run() error {
 	return err
 }
 
+func (s *SegPlay) Stop() error {
+	var err error
+	
+	s.mu_seg.Lock()
+	defer s.mu_seg.Unlock()
+	if !s.running {
+		return fmt.Errorf("segcapt: ALREADY_STOPPED_ERROR")
+	}
+	s.running = false
+	err = s.exe2.Stop()
+	if err != nil  {
+		err = fmt.Errorf("segcapt: STOP_ERROR")
+	}
+	
+	return err
+}
+
 func (s *SegPlay) command1(){ // omxplayer
 	for {
 		s.exe = cmdline.Cmdline(s.cmdomx)
@@ -121,14 +139,14 @@ func (s *SegPlay) command1(){ // omxplayer
 
 func (s *SegPlay) command2(){ // ffmpeg
 	for {
-		s.exe = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
-		lectura,err := s.exe.StderrPipe()
+		s.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
+		lectura,err := s.exe2.StderrPipe()
 		if err != nil{
 			fmt.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
 	
-		s.exe.Start()
+		s.exe2.Start()
 
 		for{ // bucle de reproduccion normal
 			line,err := mReader.ReadString('\n')
@@ -146,7 +164,7 @@ func (s *SegPlay) command2(){ // ffmpeg
 				fmt.Printf("[cmd2] %s\n",line)
 			}
 		}
-		s.exe.Stop()
+		s.exe2.Stop()
 		s.mu_seg.Lock()
 		s.restamping = false
 		if !s.running { break }
