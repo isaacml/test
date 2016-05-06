@@ -27,6 +27,7 @@ type SegPlay struct {
 	lastplay_pub, nextplay_pub       bool
 	lastplay_timestamp               int64
 	semaforo                         string // R(red), Y(yellow), G(green) download speed
+	volume							int // dB
 	mu_seg                           sync.Mutex
 }
 
@@ -49,15 +50,6 @@ func SegmentPlayer(pubdir, downloaddir string, settings map[string]string) *SegP
 	seg.nextplay_pub = false
 	seg.lastplay_timestamp = 0
 	seg.semaforo = "G" // comenzamos en verde
-
-	var overscan string
-	if seg.settings["overscan"] == "1" {
-		overscan = fmt.Sprintf(" --win %s,%s,%s,%s", seg.settings["x0"], seg.settings["y0"], seg.settings["x1"], seg.settings["y1"])
-	}
-	vol := toInt(seg.settings["vol"])
-	// creamos el cmdomx
-	// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
-	seg.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b /tmp/fifo2", 100*vol, overscan)
 
 	return seg
 }
@@ -100,6 +92,15 @@ func (s *SegPlay) Stop() error {
 
 func (s *SegPlay) command1() { // omxplayer
 	for {
+		var overscan string
+		s.mu_seg.Lock()
+		if s.settings["overscan"] == "1" {
+			overscan = fmt.Sprintf(" --win %s,%s,%s,%s", s.settings["x0"], s.settings["y0"], s.settings["x1"], s.settings["y1"])
+		}
+		vol := toInt(s.settings["vol"])
+		// creamos el cmdomx
+		// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
+		s.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b /tmp/fifo2", 100*vol, overscan)
 		s.exe = cmdline.Cmdline(s.cmdomx)
 		lectura, err := s.exe.StderrPipe()
 		if err != nil {
@@ -112,6 +113,7 @@ func (s *SegPlay) command1() { // omxplayer
 			fmt.Println(err)
 		}
 		s.mediawriter = bufio.NewWriter(stdinWrite)
+		s.mu_seg.Unlock()
 		s.exe.Start()
 
 		for { // bucle de reproduccion normal
@@ -125,6 +127,11 @@ func (s *SegPlay) command1() { // omxplayer
 				fmt.Println("[omx]","Ready...")
 				s.mu_seg.Lock()
 				s.playing = true
+				s.mu_seg.Unlock()
+			}
+			if strings.Contains(line, "Time:") { // Current Volume: -2.00
+				s.mu_seg.Lock()
+				// settear s.settings["vol"] y s.volume
 				s.mu_seg.Unlock()
 			}
 			if strings.Contains(line, "Time:") {
@@ -194,6 +201,20 @@ func (s *SegPlay) director() { // director = secuenciador + downloader + directo
 		runtime.Gosched()
 	}
 
+}
+
+func (s *SegPlay) Volume(up bool) { // director = secuenciador + downloader + director_pub
+	s.mu_seg.Lock()
+	defer s.mu_seg.Unlock()
+	if up {
+		if s.volume < 12{
+			s.mediawriter.WriteByte('+'); s.mediawriter.Flush();
+		}
+	}else{
+		if s.volume > -12{
+			s.mediawriter.WriteByte('-'); s.mediawriter.Flush();
+		}
+	}
 }
 
 // killall("bmdcapture avconv")
