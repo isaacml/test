@@ -56,6 +56,7 @@ func SegmentPlayer(pubdir, downloaddir string, settings map[string]string) *SegP
 
 func (s *SegPlay) Run() error {
 	var err error
+	ch := make(chan int)
 
 	s.mu_seg.Lock()
 	if s.running { // ya esta corriendo
@@ -65,8 +66,8 @@ func (s *SegPlay) Run() error {
 	s.running = true // comienza a correr
 	s.mu_seg.Unlock()
 
-	go s.command1()
-	go s.command2()
+	go s.command1(ch)
+	go s.command2(ch)
 	go s.director() // envia segmentos a /tmp/fifo1 cuando s.playing && s.restamping
 
 	return err
@@ -90,7 +91,8 @@ func (s *SegPlay) Stop() error {
 	return err
 }
 
-func (s *SegPlay) command1() { // omxplayer
+func (s *SegPlay) command1(ch chan int) { // omxplayer
+	var tiempo int
 	for {
 		var overscan string
 		s.mu_seg.Lock()
@@ -114,9 +116,20 @@ func (s *SegPlay) command1() { // omxplayer
 		}
 		s.mediawriter = bufio.NewWriter(stdinWrite)
 		s.mu_seg.Unlock()
+		tiempo = time.Now().Second()
+		go func() {
+			for {
+				if (time.Now().Second() - tiempo) > 10 {
+					killall("omxplayer omxplayer.bin dbus-daemon")
+					break
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
 		s.exe.Start()
 
 		for { // bucle de reproduccion normal
+			tiempo = time.Now().Second() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Fin del omxplayer !!!")
@@ -125,6 +138,7 @@ func (s *SegPlay) command1() { // omxplayer
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "Comenzando...") {
 				fmt.Println("[omx]","Ready...")
+				ch <- 1
 				s.mu_seg.Lock()
 				s.playing = true
 				s.mu_seg.Unlock()
@@ -147,10 +161,12 @@ func (s *SegPlay) command1() { // omxplayer
 			break
 		}
 		s.mu_seg.Unlock()
+		ch <- 1
 	}
 }
 
-func (s *SegPlay) command2() { // ffmpeg
+func (s *SegPlay) command2(ch chan int) { // ffmpeg
+	var tiempo int
 	for {
 		s.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
 		lectura, err := s.exe2.StderrPipe()
@@ -158,10 +174,21 @@ func (s *SegPlay) command2() { // ffmpeg
 			fmt.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
-
+		tiempo = time.Now().Second()
+		go func() {
+			for {
+				if (time.Now().Second() - tiempo) > 5 {
+					killall("ffmpeg")
+					break
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
+		<-ch
 		s.exe2.Start()
 
 		for { // bucle de reproduccion normal
+			tiempo = time.Now().Second() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Fin del ffmpeg !!!")
@@ -187,6 +214,7 @@ func (s *SegPlay) command2() { // ffmpeg
 			break
 		}
 		s.mu_seg.Unlock()
+		<-ch
 	}
 }
 
