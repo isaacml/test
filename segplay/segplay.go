@@ -93,7 +93,7 @@ func (s *SegPlay) Stop() error {
 }
 
 func (s *SegPlay) command1(ch chan int) { // omxplayer
-	var tiempo int
+	var tiempo int64
 	for {
 		var overscan string
 		s.mu_seg.Lock()
@@ -117,10 +117,10 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		}
 		s.mediawriter = bufio.NewWriter(stdinWrite)
 		s.mu_seg.Unlock()
-		tiempo = time.Now().Second()
+		tiempo = time.Now().Unix()
 		go func() {
 			for {
-				if (time.Now().Second() - tiempo) > 10 {
+				if (time.Now().Unix() - tiempo) > 10 {
 					killall("omxplayer omxplayer.bin dbus-daemon")
 					break
 				}
@@ -130,7 +130,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		s.exe.Start()
 
 		for { // bucle de reproduccion normal
-			tiempo = time.Now().Second() //; time.Sleep(5 * time.Second)
+			tiempo = time.Now().Unix() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Fin del omxplayer !!!")
@@ -167,7 +167,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 }
 
 func (s *SegPlay) command2(ch chan int) { // ffmpeg
-	var tiempo int
+	var tiempo int64
 	for {
 		s.exe2 = cmdline.Cmdline("/usr/bin/ffmpeg -y -f mpegts -re -i /tmp/fifo1 -f mpegts -acodec copy -vcodec copy /tmp/fifo2")
 		lectura, err := s.exe2.StderrPipe()
@@ -175,10 +175,10 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 			fmt.Println(err)
 		}
 		mReader := bufio.NewReader(lectura)
-		tiempo = time.Now().Second()
+		tiempo = time.Now().Unix()
 		go func() {
 			for {
-				if (time.Now().Second() - tiempo) > 5 {
+				if (time.Now().Unix() - tiempo) > 5 {
 					killall("ffmpeg")
 					break
 				}
@@ -189,7 +189,7 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 		s.exe2.Start()
 
 		for { // bucle de reproduccion normal
-			tiempo = time.Now().Second() //; time.Sleep(5 * time.Second)
+			tiempo = time.Now().Unix() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Fin del ffmpeg !!!")
