@@ -83,7 +83,7 @@ func (s *SegPlay) Stop() error {
 		return fmt.Errorf("segcapt: ALREADY_STOPPED_ERROR")
 	}
 	s.running = false
-	killall("omxplayer omxplayer.bin dbus-daemon ffmpeg")
+	killall("omxplayer omxplayer.bin ffmpeg")
 	err = s.exe.Stop()
 	if err != nil {
 		err = fmt.Errorf("segcapt: STOP_ERROR")
@@ -121,7 +121,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		go func() {
 			for {
 				if (time.Now().Unix() - tiempo) > 10 {
-					killall("omxplayer omxplayer.bin dbus-daemon")
+					killall("omxplayer omxplayer.bin")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -154,7 +154,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 			}
 			runtime.Gosched()
 		}
-		killall("omxplayer omxplayer.bin dbus-daemon")
+		killall("omxplayer omxplayer.bin")
 		s.exe.Stop()
 		s.mu_seg.Lock()
 		s.playing = false
