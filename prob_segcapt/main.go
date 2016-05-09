@@ -26,13 +26,13 @@ func main(){
 	
 	seg := segcapt.SegmentCapturer("mac_","/var/segments/",settings)
 	seg.Run(false) // prog
-	fmt.Printf("================== (PROGRAMA) =================")
+	fmt.Println("================== (PROGRAMA) =================")
 	time.Sleep(55 * time.Second) 
-	fmt.Printf("================== (PUBLICIDAD) =================")
+	fmt.Println("================== (PUBLICIDAD) =================")
 	seg.CutSegment(true) // pub
 	time.Sleep(55 * time.Second)
 	seg.CutSegment(false) // prog
-	fmt.Printf("================== (PROGRAMA) =================")
+	fmt.Println("================== (PROGRAMA) =================")
 	time.Sleep(15 * time.Second)
 	seg.Stop()
 	

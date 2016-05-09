@@ -240,8 +240,6 @@ func (s *SegPlay) director() { // director = secuenciador + downloader + directo
 		if s.playing && s.restamping {
 			fmt.Println("Preparado para recibir segmentos por el /tmp/fifo1")
 			break
-		} else {
-			fmt.Println("Aun NO estoy preparado para recibir segmentos")
 		}
 		runtime.Gosched()
 	}
