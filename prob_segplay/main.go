@@ -24,6 +24,7 @@ func main(){
 	seg.Stop()
 	for {
 		runtime.Gosched()
+		time.Sleep(1 * time.Second)
 	}
 }
 

@@ -150,7 +150,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 				s.playing = true
 				s.mu_seg.Unlock()
 			}
-			if strings.Contains(line, "Time:") { // Current Volume: -2.00
+			if strings.Contains(line, "Current Volume:") { // Current Volume: -2 => "Current Volume: %d\n"
 				s.mu_seg.Lock()
 				// settear s.settings["vol"] y s.volume
 				s.mu_seg.Unlock()
