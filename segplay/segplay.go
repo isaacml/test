@@ -121,7 +121,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		go func() {
 			for {
 				if (time.Now().Unix() - tiempo) > 10 {
-					killall("omxplayer omxplayer.bin")
+					killall("omxplayer omxplayer.bin ffmpeg")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -159,6 +159,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		s.mu_seg.Lock()
 		s.playing = false
 		if !s.running {
+			s.mu_seg.Unlock()
 			break
 		}
 		s.mu_seg.Unlock()
@@ -179,7 +180,7 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 		go func() {
 			for {
 				if (time.Now().Unix() - tiempo) > 5 {
-					killall("ffmpeg")
+					killall("omxplayer omxplayer.bin ffmpeg")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -212,6 +213,7 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 		s.mu_seg.Lock()
 		s.restamping = false
 		if !s.running {
+			s.mu_seg.Unlock()
 			break
 		}
 		s.mu_seg.Unlock()
