@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/isaacml/cmdline"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"os/exec"
-	"runtime"
 	"time"
 )
 
 type SegPlay struct {
-	cmdomx string
-	exe    *cmdline.Exec
-	exe2   *cmdline.Exec
-	mediawriter						*bufio.Writer					// por aqui puedo enviar caracteres al omxplayer
+	cmdomx                           string
+	exe                              *cmdline.Exec
+	exe2                             *cmdline.Exec
+	mediawriter                      *bufio.Writer     // por aqui puedo enviar caracteres al omxplayer
 	settings                         map[string]string // read-only map
 	downloaddir                      string            // directorio RAMdisk donde se guardan los ficheros bajados del server y listos para reproducir
 	pubdir                           string            // directorio del HD donde se guardan los ficheros de publicidad locales
@@ -28,13 +28,12 @@ type SegPlay struct {
 	lastplay_pub, nextplay_pub       bool
 	lastplay_timestamp               int64
 	semaforo                         string // R(red), Y(yellow), G(green) download speed
-	volume							int // dB
+	volume                           int    // dB
 	mu_seg                           sync.Mutex
 }
 
 func SegmentPlayer(pubdir, downloaddir string, settings map[string]string) *SegPlay {
-	seg := &SegPlay{
-	}
+	seg := &SegPlay{}
 	seg.mu_seg.Lock()
 	defer seg.mu_seg.Unlock()
 	seg.settings = settings
@@ -111,8 +110,8 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		}
 		mReader := bufio.NewReader(lectura)
 
-		stdinWrite,err := s.exe.StdinPipe()
-		if err != nil{
+		stdinWrite, err := s.exe.StdinPipe()
+		if err != nil {
 			fmt.Println(err)
 		}
 		s.mediawriter = bufio.NewWriter(stdinWrite)
@@ -121,6 +120,10 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		go func() {
 			for {
 				if (time.Now().Unix() - tiempo) > 10 {
+					s.mu_seg.Lock()
+					s.restamping = false
+					s.playing = false
+					s.mu_seg.Unlock()
 					killall("omxplayer omxplayer.bin ffmpeg")
 					break
 				}
@@ -133,12 +136,15 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 			tiempo = time.Now().Unix() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
+				s.mu_seg.Lock()
+				s.playing = false
+				s.mu_seg.Unlock()
 				fmt.Println("Fin del omxplayer !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "Comenzando...") {
-				fmt.Println("[omx]","Ready...")
+				fmt.Println("[omx]", "Ready...")
 				ch <- 1
 				s.mu_seg.Lock()
 				s.playing = true
@@ -157,7 +163,6 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		killall("omxplayer omxplayer.bin ffmpeg")
 		s.exe.Stop()
 		s.mu_seg.Lock()
-		s.playing = false
 		if !s.running {
 			s.mu_seg.Unlock()
 			break
@@ -180,6 +185,10 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 		go func() {
 			for {
 				if (time.Now().Unix() - tiempo) > 5 {
+					s.mu_seg.Lock()
+					s.restamping = false
+					s.playing = false
+					s.mu_seg.Unlock()
 					killall("omxplayer omxplayer.bin ffmpeg")
 					break
 				}
@@ -193,12 +202,15 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 			tiempo = time.Now().Unix() //; time.Sleep(5 * time.Second)
 			line, err := mReader.ReadString('\n')
 			if err != nil {
+				s.mu_seg.Lock()
+				s.restamping = false
+				s.mu_seg.Unlock()
 				fmt.Println("Fin del ffmpeg !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "libpostproc") {
-				fmt.Println("[ffmpeg]","Ready...")
+				fmt.Println("[ffmpeg]", "Ready...")
 				s.mu_seg.Lock()
 				s.restamping = true
 				s.mu_seg.Unlock()
@@ -211,7 +223,6 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 		killall("omxplayer omxplayer.bin ffmpeg")
 		s.exe2.Stop()
 		s.mu_seg.Lock()
-		s.restamping = false
 		if !s.running {
 			s.mu_seg.Unlock()
 			break
@@ -226,7 +237,7 @@ func (s *SegPlay) director() { // director = secuenciador + downloader + directo
 		if s.playing && s.restamping {
 			fmt.Println("Preparado para recibir segmentos por el /tmp/fifo1")
 			break
-		}else {
+		} else {
 			fmt.Println("Aun NO estoy preparado para recibir segmentos")
 		}
 		runtime.Gosched()
@@ -238,21 +249,23 @@ func (s *SegPlay) Volume(up bool) { // director = secuenciador + downloader + di
 	s.mu_seg.Lock()
 	defer s.mu_seg.Unlock()
 	if up {
-		if s.volume < 12{
-			s.mediawriter.WriteByte('+'); s.mediawriter.Flush();
+		if s.volume < 12 {
+			s.mediawriter.WriteByte('+')
+			s.mediawriter.Flush()
 		}
-	}else{
-		if s.volume > -12{
-			s.mediawriter.WriteByte('-'); s.mediawriter.Flush();
+	} else {
+		if s.volume > -12 {
+			s.mediawriter.WriteByte('-')
+			s.mediawriter.Flush()
 		}
 	}
 }
 
-// killall("bmdcapture avconv")
-func killall(list string){
+// killall("omxplayer omxplayer.bin ffmpeg")
+func killall(list string) {
 	prog := strings.Fields(list)
-	for _,v := range prog {
-		exec.Command("/bin/sh","-c","kill -9 `ps -A|awk '/"+v+"/{print $1}'`").Run()
+	for _, v := range prog {
+		exec.Command("/bin/sh", "-c", "/bin/kill -9 `ps -A | /usr/bin/awk '/"+v+"/{print $1}'`").Run()
 	}
 }
 
