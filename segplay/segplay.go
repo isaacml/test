@@ -151,8 +151,11 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 				s.mu_seg.Unlock()
 			}
 			if strings.Contains(line, "Current Volume:") { // Current Volume: -2 => "Current Volume: %d\n"
+				var currvol int
+				fmt.Sscanf(line,"Current Volume: %d",&currvol)
 				s.mu_seg.Lock()
-				// settear s.settings["vol"] y s.volume
+				s.settings["vol"] = fmt.Sprintf("%d",currvol)
+				s.volume = currvol
 				s.mu_seg.Unlock()
 			}
 			if strings.Contains(line, "Time:") {
