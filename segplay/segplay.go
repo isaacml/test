@@ -154,7 +154,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 			}
 			runtime.Gosched()
 		}
-		killall("omxplayer omxplayer.bin")
+		killall("omxplayer omxplayer.bin ffmpeg")
 		s.exe.Stop()
 		s.mu_seg.Lock()
 		s.playing = false
@@ -208,7 +208,7 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 			}
 			runtime.Gosched()
 		}
-		killall("ffmpeg")
+		killall("omxplayer omxplayer.bin ffmpeg")
 		s.exe2.Stop()
 		s.mu_seg.Lock()
 		s.restamping = false
