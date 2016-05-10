@@ -291,7 +291,7 @@ func (s *SegPlay) director() {
 		runtime.Gosched()
 	}
 	
-	s.secuenciador("mac_2.ts") // ejemplo: bloquea hasta que acaba de reproducir el fichero
+	s.secuenciador("segment2.ts") // ejemplo: bloquea hasta que acaba de reproducir el fichero
 	
 
 }
@@ -306,8 +306,12 @@ func (s *SegPlay) downloader() {
 	s.mu_seg.Lock()
 	rootdir := s.downloaddir
 	s.mu_seg.Unlock()
+	
+	contador := 0 // internamente en for va de 1 a 12 y cicla
 
 	for {
+		contador++
+		if contador > 12 { contador = 1 }
 		var lineacomandos string
 		connected := false // si ha conectado con el servidor
 		// consultamos la BD para ver todos los datos de la ultima bajada
@@ -406,14 +410,15 @@ func (s *SegPlay) downloader() {
 			semaforo = "R"
 		}
 		// grabamos los datos del nuevo fichero downloaded en la BD
+		segmento := fmt.Sprintf("%d",contador)
 		if downloadedok{
-			err = exec.Command("/bin/sh","-c","mv -f "+rootdir+"download.ts"+" "+rootdir+g_filename+".ts").Run()
+			err = exec.Command("/bin/sh","-c","mv -f "+rootdir+"download.ts"+" "+rootdir+"segment"+segmento+".ts").Run()
 			if err != nil {
 				log.Println(err)
 			}
 			last_connect := time.Now().Unix() // es el momento de la grabación del downloaded segment
 			db_mu.Lock()
-			_, err = db.Exec("INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", g_filename, g_bytes, g_md5sum,
+			_, err = db.Exec("INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "segment"+segmento, g_bytes, g_md5sum,
 				g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", last_connect, semaforo, 0)
 			db_mu.Unlock()
 			if err != nil {
