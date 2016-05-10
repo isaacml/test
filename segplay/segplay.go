@@ -91,7 +91,7 @@ func (s *SegPlay) Run() error {
 	go s.command1(ch)
 	go s.command2(ch)
 	go s.downloader() // bajando a su bola sin parar lo que el director le diga de donde bajarlo (tv_id, mac, ip_download)
-	go s.director() // envia segmentos a /tmp/fifo1 cuando s.playing && s.restamping
+	go s.director() // envia segmentos al secuenciador cuando s.playing && s.restamping
 
 	return err
 }
