@@ -306,7 +306,7 @@ func (s *SegPlay) downloader() {
 	s.mu_seg.Lock()
 	rootdir := s.downloaddir
 	s.mu_seg.Unlock()
-	
+
 	for {
 		var lineacomandos string
 		connected := false // si ha conectado con el servidor
@@ -338,6 +338,15 @@ func (s *SegPlay) downloader() {
 		mReader := bufio.NewReader(lectura)
 		downloaded, downloadedok = false, false
 		time_semaforo := time.Now()
+		go func(){
+			for{
+				if time.Since(time_semaforo).Seconds() > 20 { // no permitir bajadas de más de 20 segundos (2 segmentos)
+					exe.Stop()
+					break
+				}
+				time.Sleep(1 * time.Second)
+			}			
+		}()
 		exe.Start()
 		for { // bucle de reproduccion normal
 			line, err := mReader.ReadString('\n')
