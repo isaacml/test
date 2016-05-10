@@ -10,7 +10,29 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
+	"log"
+	"os"
+	"io"
 )
+
+const (
+	DirDB     = "/root/download.db"
+)
+
+var	(
+	db      *sql.DB
+	db_mu	sync.Mutex
+)
+
+func init(){
+	var err_db error
+	db, err_db = sql.Open("sqlite3", DirDB)
+	if err_db != nil {
+		log.Fatalln(err_db)
+	}
+}
 
 type SegPlay struct {
 	cmdomx                           string
@@ -68,6 +90,7 @@ func (s *SegPlay) Run() error {
 
 	go s.command1(ch)
 	go s.command2(ch)
+	go s.downloader() // bajando a su bola sin parar lo que el director le diga de donde bajarlo (tv_id, mac, ip_download)
 	go s.director() // envia segmentos a /tmp/fifo1 cuando s.playing && s.restamping
 
 	return err
@@ -235,7 +258,31 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 	}
 }
 
-func (s *SegPlay) director() { // director = secuenciador + downloader + director_pub
+// esta funcion envia los ficheros a reproducir a la cola de reproducción en el FIFO1 /tmp/fifo1
+// secuencia /tmp/fifo1
+func (s *SegPlay) secuenciador(file string) {
+
+	fw, err := os.OpenFile("/tmp/fifo1", os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer fw.Close()
+
+	fr, err := os.Open(file) // read-only
+	if err != nil {
+		log.Fatalln(err)
+	}
+	if n, err := io.Copy(fw, fr); err == nil {
+		fmt.Printf("Copiados %d bytes\n", n)
+	} else {
+		log.Println(err) // no salimos en caso de error de copia
+	}
+	fr.Close()
+	
+}
+
+// el director ahora mismo solo le dirá al secuenciador que ficheros enviar a la cola de reproduccion
+func (s *SegPlay) director() {
 	for {
 		if s.playing && s.restamping {
 			fmt.Println("Preparado para recibir segmentos por el /tmp/fifo1")
@@ -243,11 +290,133 @@ func (s *SegPlay) director() { // director = secuenciador + downloader + directo
 		}
 		runtime.Gosched()
 	}
+	
+	s.secuenciador("mac_2.ts") // ejemplo: bloquea hasta que acaba de reproducir el fichero
+	
 
 }
 
+// downloader en un futuro dependerá del valor del server s.settings["ip_download"] y por tanto del servidor de gestion, además del playout que le indiqie el director bajar
+// debe añadirse el código q recoge las variables lastplay_pub, nextplay_pub importantes para el director playout
 func (s *SegPlay) downloader() {
+	var downloaded, downloadedok bool
+	var g_bytes, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_duration, g_timestamp int
+	var g_filename, g_md5sum, g_fvideo, g_faudio, g_block, g_next string
 	
+	s.mu_seg.Lock()
+	rootdir := s.downloaddir
+	s.mu_seg.Unlock()
+	
+	for {
+		var lineacomandos string
+		connected := false // si ha conectado con el servidor
+		// consultamos la BD para ver todos los datos de la ultima bajada
+		query, err := db.Query("SELECT * FROM `SEGMENTOS` WHERE SEGMENTOS.timestamp = (SELECT MAX(SEGMENTOS.timestamp) FROM SEGMENTOS)")
+		if err != nil {
+			log.Println(err)
+		}
+		var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
+		var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
+		for query.Next(){
+			err = query.Scan(&filename, &bytes, &md5sum, &fvideo, &faudio, &hres, &vres, &numfps, &denfps, &vbitrate, &abitrate, &block, &next, &semaforo, &duration, &timestamp, &mac, &last_connect, &tv_id)
+			if err != nil {
+				log.Println(err)
+			}
+		}	
+		s.mu_seg.Lock()
+		s.lastdownload = filename+".ts"
+		lineacomandos = fmt.Sprintf("/usr/bin/wget --limit-rate=625k -S -O %sdownload.ts --post-data tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s http://%s/download.cgi",
+											rootdir,s.settings["tv_id"],s.settings["mac"],semaforo,s.lastdownload,bytes,md5sum,s.settings["ip_download"])
+		s.mu_seg.Unlock()
+		fmt.Println(lineacomandos)
+		// construimos la linea de comandos
+		exe := cmdline.Cmdline(lineacomandos)
+		lectura, err:= exe.StderrPipe()
+		if err != nil {
+			fmt.Println(err)
+		}
+		mReader := bufio.NewReader(lectura)
+		downloaded, downloadedok = false, false
+		time_semaforo := time.Now()
+		exe.Start()
+		for { // bucle de reproduccion normal
+			line, err := mReader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Fin del wget !!!")
+				break
+			}
+			line = strings.TrimRight(line, "\n")
+			if strings.Contains(line, "HTTP/1.1 200 OK") {
+				fmt.Println("Downloaded OK")
+				downloaded = true
+			}
+			if strings.Contains(line, "X-Frame-Options:") {
+				connected = true
+				if downloaded {
+					line = strings.Trim(line, " ")
+					fmt.Sscanf(line, "X-Frame-Options: bytes=%d filename=%s md5sum=%s fvideo=%s faudio=%s hres=%d vres=%d numfps=%d denfps=%d vbitrate=%d abitrate=%d block=%s next=%s duration=%d timestamp=%d", 
+									&g_bytes, &g_filename, &g_md5sum, &g_fvideo, &g_faudio, &g_hres, &g_vres, &g_numfps, &g_denfps, &g_vbitrate, &g_abitrate, &g_block, &g_next, &g_duration, &g_timestamp)
+				}else{ // X-Frame-Options: already downloaded ; X-Frame-Options: access not granted
+					fmt.Println("NOT Downloaded")
+				}
+			}
+			fmt.Printf("[wget] %s\n", line)
+			runtime.Gosched()
+		}
+		exe.Stop()
+		dur_semaforo := time.Since(time_semaforo).Seconds()
+		if downloaded {
+			// comprobar que el fichero se ha bajado correctamente
+			fileinfo, err := os.Stat(rootdir+"download.ts") // fileinfo.Size()
+			if err != nil {
+				downloadedok = false
+				fmt.Println(err)
+			}
+			filesize := fileinfo.Size()
+			md5:= md5sumfunc(rootdir+"download.ts")
+			if filesize == int64(g_bytes) && md5 == g_md5sum {
+				downloadedok = true	
+			}else{
+				downloadedok = false
+			}
+		}
+		// decidir el color del semaforo
+		if downloadedok {
+			var color float64
+			color = float64(dur_semaforo) / float64(g_duration) // duration=10
+			switch {
+				case color > 1.2:
+					semaforo = "R"
+				case color < 0.8:
+					semaforo = "G"
+				default:
+					semaforo = "Y"
+			}
+		}
+		if !connected {
+			semaforo = "R"
+		}
+		// grabamos los datos del nuevo fichero downloaded en la BD
+		if downloadedok{
+			err = exec.Command("/bin/sh","-c","mv -f "+rootdir+"download.ts"+" "+rootdir+g_filename+".ts").Run()
+			if err != nil {
+				log.Println(err)
+			}
+			last_connect := time.Now().Unix() // es el momento de la grabación del downloaded segment
+			db_mu.Lock()
+			_, err = db.Exec("INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", g_filename, g_bytes, g_md5sum,
+				g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", last_connect, semaforo, 0)
+			db_mu.Unlock()
+			if err != nil {
+				log.Println(err)
+			}
+			fmt.Println("Grabado en base de datos y fichero movido")
+		}else{
+			os.Remove(rootdir+"download.ts")
+			fmt.Println("download.ts borrado")
+		}
+		time.Sleep(1 * time.Second) // re-try downloads every second
+	}
 }
 
 func (s *SegPlay) Volume(up bool) { // director = secuenciador + downloader + director_pub
@@ -264,6 +433,13 @@ func (s *SegPlay) Volume(up bool) { // director = secuenciador + downloader + di
 			s.mediawriter.Flush()
 		}
 	}
+}
+
+// equivalent to md5sum -b filename
+func md5sumfunc(filename string) string {
+	out, _ := exec.Command("/bin/sh", "-c", "/usr/bin/md5sum -b "+filename+" | awk '{print $1}'").CombinedOutput()
+
+	return strings.TrimSpace(string(out))
 }
 
 // killall("omxplayer omxplayer.bin ffmpeg")
