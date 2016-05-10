@@ -246,6 +246,10 @@ func (s *SegPlay) director() { // director = secuenciador + downloader + directo
 
 }
 
+func (s *SegPlay) downloader() {
+	
+}
+
 func (s *SegPlay) Volume(up bool) { // director = secuenciador + downloader + director_pub
 	s.mu_seg.Lock()
 	defer s.mu_seg.Unlock()

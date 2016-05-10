@@ -17,13 +17,13 @@ import (
 
 const (
 	// variables de configuracion del servidor HTTP
-	DirDB     = "/usr/local/bin/download.db"
+	DirDB     = "/home/antonio/rpi/download.db"
 	rootdir   = "/var/segments/"
 )
 
 var settings = make(map[string]string)
 // var internas de SegPlay
-var semaforo, lastdownload string
+var g_semaforo, lastdownload string
 var downloaded, downloadedok bool
 var	db      *sql.DB
 var	db_mu	sync.Mutex
@@ -55,12 +55,14 @@ func main() {
 		"mac"			:	"d4ae52d3ea66", // la recogemos con bmdinfo()
 
 		"tv_id"			:	"2", // nos lo dará en su momento el server de gestion
-		"ip_upload"		:	"192.168.4.22:9999", // nos lo dará en su momento el server de gestion
+		"ip_download"		:	"192.168.4.22:9999", // nos lo dará en su momento el server de gestion
 	}
-	semaforo = "G"
-	lastdownload = "mac_2.ts"
+	g_semaforo = "G"
+	lastdownload = ""
 
 	download()
+	
+	db.Close()
 }
 
 // /usr/bin/wget -S -O download.ts --post-data 'tv_id=2&mac=d4ae52d3ea66&semaforo=G&downloaded=mac_2.ts&bytes=285008&md5sum=7cce5be2e91ed0eed5c1452538a2a290' http://192.168.4.22:9999/download.cgi
@@ -74,20 +76,21 @@ func download(){
 	if err != nil {
 		log.Println(err)
 	}
+	var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
+	var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
 	for query.Next(){
-		var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
-		var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
 		err = query.Scan(&filename, &bytes, &md5sum, &fvideo, &faudio, &hres, &vres, &numfps, &denfps, &vbitrate, &abitrate, &block, &next, &semaforo, &duration, &timestamp, &mac, &last_connect, &tv_id)
 		if err != nil {
 			log.Println(err)
 		}
 		lastdownload = filename+".ts"
-		lineacomandos = fmt.Sprintf("/usr/bin/wget -S -O %sdownload.ts --post-data 'tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s' http://192.168.4.22:9999/download.cgi",
-										rootdir,settings["tv_id"],settings["mac"],semaforo,lastdownload,bytes,md5sum)
 	}	
+	lineacomandos = fmt.Sprintf("/usr/bin/wget -S -O %sdownload.ts --post-data tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s http://%s/download.cgi",
+										rootdir,settings["tv_id"],settings["mac"],semaforo,lastdownload,bytes,md5sum,settings["ip_download"])
+	fmt.Println(lineacomandos)
 	// construimos la linea de comandos
 	exe := cmdline.Cmdline(lineacomandos)
-	lectura, err:= exe.StdoutPipe()
+	lectura, err:= exe.StderrPipe()
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -103,7 +106,7 @@ func download(){
 		}
 		line = strings.TrimRight(line, "\n")
 		if strings.Contains(line, "HTTP/1.1 200 OK") {
-			fmt.Println("Uploaded OK")
+			fmt.Println("Downloaded OK")
 			downloaded = true
 		}
 		if strings.Contains(line, "X-Frame-Options:") {
@@ -113,7 +116,7 @@ func download(){
 				fmt.Sscanf(line, "X-Frame-Options: bytes=%d filename=%s md5sum=%s fvideo=%s faudio=%s hres=%d vres=%d numfps=%d denfps=%d vbitrate=%d abitrate=%d block=%s next=%s duration=%d timestamp=%d", 
 								&g_bytes, &g_filename, &g_md5sum, &g_fvideo, &g_faudio, &g_hres, &g_vres, &g_numfps, &g_denfps, &g_vbitrate, &g_abitrate, &g_block, &g_next, &g_duration, &g_timestamp)
 			}else{ // X-Frame-Options: already downloaded ; X-Frame-Options: access not granted
-				
+				fmt.Println("NOT Downloaded")
 			}
 		}
 		fmt.Printf("[wget] %s\n", line)
@@ -154,21 +157,29 @@ func download(){
 	}
 	// grabamos los datos del nuevo fichero downloaded en la BD
 	if downloadedok{
-		err = exec.Command("/bin/sh","-c","mv -f "+rootdir+"download.ts"+" "+rootdir+lastdownload).Run()
+		err = exec.Command("/bin/sh","-c","mv -f "+rootdir+"download.ts"+" "+rootdir+g_filename+".ts").Run()
 		if err != nil {
 			log.Println(err)
 		}
+		last_connect := time.Now().Unix() // es el momento de la grabación del downloaded segment
 		db_mu.Lock()
 		_, err = db.Exec("INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", g_filename, g_bytes, g_md5sum,
-			g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", g_timestamp, semaforo, 0)
+			g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", last_connect, semaforo, 0)
 		db_mu.Unlock()
+		if err != nil {
+			log.Println(err)
+		}
+		fmt.Println("Grabado en base de datos y fichero movido")
+	}else{
+		os.Remove(rootdir+"download.ts")
+		fmt.Println("download.ts borrado")
 	}
 		
 }
 
 // equivalent to md5sum -b filename
 func md5sumfunc(filename string) string {
-	out, _ := exec.Command("/bin/sh", "-c", "md5sum -b "+filename+" | awk '{print $1}'").CombinedOutput()
+	out, _ := exec.Command("/bin/sh", "-c", "/usr/bin/md5sum -b "+filename+" | awk '{print $1}'").CombinedOutput()
 
 	return strings.TrimSpace(string(out))
 }
