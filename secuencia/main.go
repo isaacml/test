@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 )
 
 // secuencia /tmp/fifo
@@ -35,6 +36,7 @@ func main() {
 			log.Println(err) // no salimos en caso de error de copia
 		}
 		fr.Close()
+		time.Sleep(200 * time.Millisecond)
 	}
 	fmt.Println("Finalizamos")
 }

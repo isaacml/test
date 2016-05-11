@@ -125,7 +125,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 		vol := toInt(s.settings["vol"])
 		// creamos el cmdomx
 		// /usr/bin/omxplayer -s -o both --vol 100 --hw --win '0 0 719 575' --no-osd -b /tmp/fifo2
-		s.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b /tmp/fifo2", 100*vol, overscan)
+		s.cmdomx = fmt.Sprintf("/usr/bin/omxplayer -s -o both --vol %d --hw%s --layer 100 --no-osd -b --live --threshold 1.0 /tmp/fifo2", 100*vol, overscan)
 		s.exe = cmdline.Cmdline(s.cmdomx)
 		lectura, err := s.exe.StderrPipe()
 		if err != nil {
@@ -284,16 +284,60 @@ func (s *SegPlay) secuenciador(file string) {
 // el director ahora mismo solo le dirá al secuenciador que ficheros enviar a la cola de reproduccion
 func (s *SegPlay) director() {
 	for {
+		s.mu_seg.Lock()
 		if s.playing && s.restamping {
-			fmt.Println("Preparado para recibir segmentos por el /tmp/fifo1")
-			break
+			s.mu_seg.Unlock()
+			fmt.Println("[director] Preparado para recibir segmentos por el /tmp/fifo1")
+			// Contamos en BD los rows con count()
+			query, err := db.Query("SELECT COUNT(*) AS count FROM `SEGMENTOS`")
+			if err != nil {
+				log.Println(err)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			var count int
+			for query.Next(){
+				err = query.Scan(&count)
+				if err != nil {
+					log.Println(err)
+					time.Sleep(1 * time.Second)
+					continue
+				}
+			}	
+			var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
+			var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
+			// si sale menos de 4 espera 1 segundo y continue (al menos 4 segmentos bajados completamente)
+			if count < 4 {
+				time.Sleep(1 * time.Second)
+				continue // al inicio del for
+			}else{
+				// si es 4 o mas, hacemos un SELECT MIN(lastconnect) y recoge todos los valores (nombre fichero incluido)
+				query, err := db.Query("SELECT  * FROM segmentos WHERE last_connect = (SELECT min(last_connect) FROM segmentos)")
+				if err != nil {
+					log.Println(err)
+					time.Sleep(1 * time.Second)
+					continue
+				}
+				for query.Next(){
+					err = query.Scan(&filename, &bytes, &md5sum, &fvideo, &faudio, &hres, &vres, &numfps, &denfps, &vbitrate, &abitrate, &block, &next, &semaforo, &duration, &timestamp, &mac, &last_connect, &tv_id)
+					if err != nil {
+						log.Println(err)
+						time.Sleep(1 * time.Second)
+						continue
+					}
+				}	
+			}
+			// s.secuenciador(fichero)
+			s.secuenciador(s.downloaddir+filename+".ts")
+			// Borramos la entrada en la BD del dicho fichero
+			db_mu.Lock()
+			_, err = db.Exec("DELETE FROM segmentos WHERE filename = ?",filename)  // si no lo borra volvería a reproducir el mismo fichero otra vez
+			db_mu.Unlock()
+		}else{
+			s.mu_seg.Unlock()
+			time.Sleep(1 * time.Second)
 		}
-		runtime.Gosched()
 	}
-	
-	s.secuenciador("segment2.ts") // ejemplo: bloquea hasta que acaba de reproducir el fichero
-	
-
 }
 
 // downloader en un futuro dependerá del valor del server s.settings["ip_download"] y por tanto del servidor de gestion, además del playout que le indiqie el director bajar
