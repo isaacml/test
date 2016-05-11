@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	DirDB     = "/root/download.db"
+	EmptyDB     = "/root/download.db"
+	TempDB		= "/var/segments/download.db"
 )
 
 var	(
@@ -27,8 +28,10 @@ var	(
 )
 
 func init(){
+	exec.Command("/bin/sh","-c","cp "+EmptyDB+" "+TempDB).Run()
+	exec.Command("/bin/sh","-c","sync").Run()
 	var err_db error
-	db, err_db = sql.Open("sqlite3", DirDB)
+	db, err_db = sql.Open("sqlite3", TempDB)
 	if err_db != nil {
 		log.Fatalln(err_db)
 	}
@@ -85,6 +88,11 @@ func (s *SegPlay) Run() error {
 		s.mu_seg.Unlock()
 		return fmt.Errorf("segplay: ALREADY_RUNNING_ERROR")
 	}
+	// borrar la base de datos de RAM y los ficheros *.ts
+	exec.Command("/bin/sh","-c","rm -f "+s.downloaddir+"*.ts") // equivale a rm -f /var/segments/*.ts
+	db_mu.Lock()
+	db.Exec("DELETE FROM segmentos") // borramos toda la base de datos
+	db_mu.Unlock()
 	s.running = true // comienza a correr
 	s.mu_seg.Unlock()
 

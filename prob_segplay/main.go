@@ -20,17 +20,9 @@ func main(){
 	fmt.Println("...")
 	seg := segplay.SegmentPlayer("","/root/",settings)
 	seg.Run() // 3 gorutinas
-	time.Sleep(20 * time.Second) 
-	seg.Volume(true) // +
-	time.Sleep(10 * time.Second) 
-	seg.Volume(false) // -
-	time.Sleep(10 * time.Second) 
-	seg.Volume(false) // -
-	time.Sleep(10 * time.Second) 
-	seg.Stop()
 	for {
 		runtime.Gosched()
-//		time.Sleep(1 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
 
