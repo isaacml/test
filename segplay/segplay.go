@@ -281,7 +281,7 @@ func (s *SegPlay) secuenciador(file string) {
 		log.Fatalln(err)
 	}
 	if n, err := io.Copy(fw, fr); err == nil {
-		fmt.Printf("Copiados %d bytes\n", n)
+		fmt.Printf("[secuenciador] (%s) Copiados %d bytes\n", file, n)
 	} else {
 		log.Println(err) // no salimos en caso de error de copia
 	}
@@ -315,6 +315,7 @@ func (s *SegPlay) director() {
 			var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
 			var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
 			// si sale menos de 4 espera 1 segundo y continue (al menos 4 segmentos bajados completamente)
+			fmt.Printf("[director] count = %d\n",count)
 			if count < 4 {
 				time.Sleep(1 * time.Second)
 				continue // al inicio del for
@@ -336,7 +337,9 @@ func (s *SegPlay) director() {
 				}
 			}
 			// s.secuenciador(fichero)
+			fmt.Printf("[director] Start Playing = %s\n",filename + ".ts")
 			s.secuenciador(s.downloaddir + filename + ".ts")
+			fmt.Printf("[director] Finish Playing = %s\n",filename + ".ts")
 			// Borramos la entrada en la BD del dicho fichero
 			db_mu.Lock()
 			_, err = db.Exec("DELETE FROM segmentos WHERE filename = ?", filename) // si no lo borra volvería a reproducir el mismo fichero otra vez
@@ -386,7 +389,7 @@ func (s *SegPlay) downloader() {
 		lineacomandos = fmt.Sprintf("/usr/bin/wget --limit-rate=625k -S -O %sdownload.ts --post-data tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s http://%s/download.cgi",
 			rootdir, s.settings["tv_id"], s.settings["mac"], semaforo, s.lastdownload, bytes, md5sum, s.settings["ip_download"])
 		s.mu_seg.Unlock()
-		fmt.Println(lineacomandos)
+		fmt.Println("[downloader]",lineacomandos)
 		// construimos la linea de comandos
 		exe := cmdline.Cmdline(lineacomandos)
 		lectura, err := exe.StderrPipe()
@@ -414,7 +417,7 @@ func (s *SegPlay) downloader() {
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "HTTP/1.1 200 OK") {
-				fmt.Println("Downloaded OK")
+				fmt.Println("[downloader] Downloaded OK")
 				downloaded = true
 			}
 			if strings.Contains(line, "X-Frame-Options:") {
@@ -424,7 +427,7 @@ func (s *SegPlay) downloader() {
 					fmt.Sscanf(line, "X-Frame-Options: bytes=%d filename=%s md5sum=%s fvideo=%s faudio=%s hres=%d vres=%d numfps=%d denfps=%d vbitrate=%d abitrate=%d block=%s next=%s duration=%d timestamp=%d",
 						&g_bytes, &g_filename, &g_md5sum, &g_fvideo, &g_faudio, &g_hres, &g_vres, &g_numfps, &g_denfps, &g_vbitrate, &g_abitrate, &g_block, &g_next, &g_duration, &g_timestamp)
 				} else { // X-Frame-Options: already downloaded ; X-Frame-Options: access not granted
-					fmt.Println("NOT Downloaded")
+					fmt.Println("[downloader] NOT Downloaded")
 				}
 			}
 			fmt.Printf("[wget] %s\n", line)
@@ -478,10 +481,10 @@ func (s *SegPlay) downloader() {
 			if err != nil {
 				log.Println(err)
 			}
-			fmt.Println("Grabado en base de datos y fichero movido")
+			fmt.Println("[downloader] Grabado en base de datos y fichero movido")
 		} else {
 			os.Remove(rootdir + "download.ts")
-			fmt.Println("download.ts borrado")
+			fmt.Println("[downloader] download.ts borrado")
 		}
 		time.Sleep(1 * time.Second) // re-try downloads every second
 	}
