@@ -317,7 +317,7 @@ func (s *SegPlay) director() {
 			// si sale menos de 4 espera 1 segundo y continue (al menos 4 segmentos bajados completamente)
 			fmt.Printf("[director] count = %d\n",count)
 			if count < 4 {
-				time.Sleep(1 * time.Second)
+				time.Sleep(25 * time.Millisecond)
 				continue // al inicio del for
 			} else {
 				// si es 4 o mas, hacemos un SELECT MIN(lastconnect) y recoge todos los valores (nombre fichero incluido)
@@ -338,7 +338,7 @@ func (s *SegPlay) director() {
 			}
 			// s.secuenciador(fichero)
 			fmt.Printf("[director] Start Playing = %s\n",filename + ".ts")
-			s.secuenciador(s.downloaddir + filename + ".ts")
+			s.secuenciador(s.downloaddir + filename + ".ts")						//	!!!!!!!!!!!!!!!! === PLAY === !!!!!!!!!!!!!!!!!!!!!
 			fmt.Printf("[director] Finish Playing = %s\n",filename + ".ts")
 			// Borramos la entrada en la BD del dicho fichero
 			db_mu.Lock()
