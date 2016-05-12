@@ -291,6 +291,8 @@ func (s *SegPlay) secuenciador(file string) {
 
 // el director ahora mismo solo le dirá al secuenciador que ficheros enviar a la cola de reproduccion
 func (s *SegPlay) director() {
+	var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
+	var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
 	for {
 		s.mu_seg.Lock()
 		if s.playing && s.restamping {
@@ -312,8 +314,6 @@ func (s *SegPlay) director() {
 					continue
 				}
 			}
-			var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
-			var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
 			// si sale menos de 4 espera 1 segundo y continue (al menos 4 segmentos bajados completamente)
 			fmt.Printf("[director] count = %d\n",count)
 			if count < 4 {
