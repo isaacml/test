@@ -89,7 +89,7 @@ func (s *SegPlay) Run() error {
 		return fmt.Errorf("segplay: ALREADY_RUNNING_ERROR")
 	}
 	// borrar la base de datos de RAM y los ficheros *.ts
-	exec.Command("/bin/sh", "-c", "rm -f "+s.downloaddir+"*.ts") // equivale a rm -f /var/segments/*.ts
+	exec.Command("/bin/sh", "-c", "rm -f "+s.downloaddir+"*.ts").Run() // equivale a rm -f /var/segments/*.ts
 	db_mu.Lock()
 	db.Exec("DELETE FROM segmentos") // borramos toda la base de datos
 	db_mu.Unlock()
@@ -170,12 +170,12 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 				s.mu_seg.Lock()
 				s.playing = false
 				s.mu_seg.Unlock()
-				fmt.Println("Fin del omxplayer !!!")
+				////fmt.Println("Fin del omxplayer !!!")  
 				break
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "Comenzando...") {
-				fmt.Println("[omx]", "Ready...")
+				////fmt.Println("[omx]", "Ready...")
 				ch <- 1
 				s.mu_seg.Lock()
 				s.playing = true
@@ -190,7 +190,7 @@ func (s *SegPlay) command1(ch chan int) { // omxplayer
 				s.mu_seg.Unlock()
 			}
 			if strings.Contains(line, "Time:") {
-				fmt.Printf("[omx] %s\n", line)
+				////fmt.Printf("[omx] %s\n", line)
 			}
 			runtime.Gosched()
 		}
@@ -239,18 +239,18 @@ func (s *SegPlay) command2(ch chan int) { // ffmpeg
 				s.mu_seg.Lock()
 				s.restamping = false
 				s.mu_seg.Unlock()
-				fmt.Println("Fin del ffmpeg !!!")
+				////fmt.Println("Fin del ffmpeg !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
 			if strings.Contains(line, "libpostproc") {
-				fmt.Println("[ffmpeg]", "Ready...")
+				////fmt.Println("[ffmpeg]", "Ready...")
 				s.mu_seg.Lock()
 				s.restamping = true
 				s.mu_seg.Unlock()
 			}
 			if strings.Contains(line, "frame=") {
-				fmt.Printf("[ffmpeg] %s\n", line)
+				////fmt.Printf("[ffmpeg] %s\n", line)
 			}
 			runtime.Gosched()
 		}
@@ -295,7 +295,7 @@ func (s *SegPlay) director() {
 		s.mu_seg.Lock()
 		if s.playing && s.restamping {
 			s.mu_seg.Unlock()
-			fmt.Println("[director] Preparado para recibir segmentos por el /tmp/fifo1")
+			////fmt.Println("[director] Preparado para recibir segmentos por el /tmp/fifo1")
 			// Contamos en BD los rows con count()
 			query, err := db.Query("SELECT COUNT(*) AS count FROM `SEGMENTOS`")
 			if err != nil {
@@ -343,6 +343,7 @@ func (s *SegPlay) director() {
 			// Borramos la entrada en la BD del dicho fichero
 			db_mu.Lock()
 			_, err = db.Exec("DELETE FROM segmentos WHERE filename = ?", filename) // si no lo borra volvería a reproducir el mismo fichero otra vez
+			fmt.Printf("[director] DELETE FROM segmentos WHERE filename = %s\n",filename)
 			db_mu.Unlock()
 		} else {
 			s.mu_seg.Unlock()
@@ -365,10 +366,6 @@ func (s *SegPlay) downloader() {
 	contador := 0 // internamente en for va de 1 a 12 y cicla
 
 	for {
-		contador++
-		if contador > 12 {
-			contador = 1
-		}
 		var lineacomandos string
 		connected := false // si ha conectado con el servidor
 		// consultamos la BD para ver todos los datos de la ultima bajada
@@ -385,11 +382,11 @@ func (s *SegPlay) downloader() {
 			}
 		}
 		s.mu_seg.Lock()
-		s.lastdownload = filename + ".ts"
+		//s.lastdownload = filename + ".ts"
 		lineacomandos = fmt.Sprintf("/usr/bin/wget --limit-rate=625k -S -O %sdownload.ts --post-data tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s http://%s/download.cgi",
 			rootdir, s.settings["tv_id"], s.settings["mac"], semaforo, s.lastdownload, bytes, md5sum, s.settings["ip_download"])
 		s.mu_seg.Unlock()
-		fmt.Println("[downloader]",lineacomandos)
+		////fmt.Println("[downloader]",lineacomandos)
 		// construimos la linea de comandos
 		exe := cmdline.Cmdline(lineacomandos)
 		lectura, err := exe.StderrPipe()
@@ -398,11 +395,13 @@ func (s *SegPlay) downloader() {
 		}
 		mReader := bufio.NewReader(lectura)
 		downloaded, downloadedok = false, false
-		time_semaforo := time.Now()
+		downloading := true
+		tiempo := time.Now().Unix()
 		go func() {
 			for {
-				if time.Since(time_semaforo).Seconds() > 20 { // no permitir bajadas de más de 20 segundos (2 segmentos)
+				if (time.Now().Unix() - tiempo) > 20 && downloading {
 					exe.Stop()
+					fmt.Println("[downloader] WGET matado supera los 20 segundos !!!!")
 					break
 				}
 				time.Sleep(1 * time.Second)
@@ -412,7 +411,7 @@ func (s *SegPlay) downloader() {
 		for { // bucle de reproduccion normal
 			line, err := mReader.ReadString('\n')
 			if err != nil {
-				fmt.Println("Fin del wget !!!")
+				////fmt.Println("Fin del wget !!!")
 				break
 			}
 			line = strings.TrimRight(line, "\n")
@@ -426,15 +425,20 @@ func (s *SegPlay) downloader() {
 					line = strings.Trim(line, " ")
 					fmt.Sscanf(line, "X-Frame-Options: bytes=%d filename=%s md5sum=%s fvideo=%s faudio=%s hres=%d vres=%d numfps=%d denfps=%d vbitrate=%d abitrate=%d block=%s next=%s duration=%d timestamp=%d",
 						&g_bytes, &g_filename, &g_md5sum, &g_fvideo, &g_faudio, &g_hres, &g_vres, &g_numfps, &g_denfps, &g_vbitrate, &g_abitrate, &g_block, &g_next, &g_duration, &g_timestamp)
+					s.mu_seg.Lock()
+					s.lastdownload = g_filename + ".ts"
+					s.mu_seg.Unlock()
+					fmt.Printf("[downloader] Fichero bajado: %s\n",g_filename+".ts")
 				} else { // X-Frame-Options: already downloaded ; X-Frame-Options: access not granted
 					fmt.Println("[downloader] NOT Downloaded")
 				}
 			}
-			fmt.Printf("[wget] %s\n", line)
+			//fmt.Printf("[wget] %s\n", line) //==>
 			runtime.Gosched()
 		}
+		downloading = false
 		exe.Stop()
-		dur_semaforo := time.Since(time_semaforo).Seconds()
+		dur_semaforo := time.Now().Unix() - tiempo
 		if downloaded {
 			// comprobar que el fichero se ha bajado correctamente
 			fileinfo, err := os.Stat(rootdir + "download.ts") // fileinfo.Size()
@@ -462,6 +466,10 @@ func (s *SegPlay) downloader() {
 			default:
 				semaforo = "Y"
 			}
+			contador++
+			if contador > 12 {
+				contador = 1
+			}
 		}
 		if !connected {
 			semaforo = "R"
@@ -470,6 +478,7 @@ func (s *SegPlay) downloader() {
 		segmento := fmt.Sprintf("%d", contador)
 		if downloadedok {
 			err = exec.Command("/bin/sh", "-c", "mv -f "+rootdir+"download.ts"+" "+rootdir+"segment"+segmento+".ts").Run()
+			fmt.Printf("[downloader] mv -f "+rootdir+"download.ts"+" "+rootdir+"segment"+segmento+".ts")
 			if err != nil {
 				log.Println(err)
 			}
@@ -478,6 +487,10 @@ func (s *SegPlay) downloader() {
 			_, err = db.Exec("INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "segment"+segmento, g_bytes, g_md5sum,
 				g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", last_connect, semaforo, 0)
 			db_mu.Unlock()
+			//var g_bytes, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_duration, g_timestamp int
+			//var g_filename, g_md5sum, g_fvideo, g_faudio, g_block, g_next string
+			fmt.Printf("[downloader] INSERT INTO segmentos (filename,bytes,md5sum,fvideo,faudio,hres,vres,num_fps,den_fps,vbitrate,abitrate,block,next,duration,timestamp,mac,last_connect,semaforo,tv_id) VALUES (%s,%d,%s,%s,%s,%d,%d,%d,%d,%d,%d,%s,%s,%d,%d,%s,%d,%s,%d)",
+				"segment"+segmento, g_bytes, g_md5sum, g_fvideo, g_faudio, g_hres, g_vres, g_numfps, g_denfps, g_vbitrate, g_abitrate, g_block, g_next, g_duration, g_timestamp, "-", last_connect, semaforo, 0)
 			if err != nil {
 				log.Println(err)
 			}
