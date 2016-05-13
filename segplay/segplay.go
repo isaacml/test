@@ -293,8 +293,13 @@ func (s *SegPlay) secuenciador(file string) {
 func (s *SegPlay) director() {
 	var bytes, hres, vres, numfps, denfps, vbitrate, abitrate, duration, timestamp, last_connect, tv_id int
 	var filename, md5sum, fvideo, faudio, block, next, semaforo, mac string
+	startremote := true
 	for {
 		s.mu_seg.Lock()
+		if !s.running {
+			s.mu_seg.Unlock()
+			break
+		}
 		if s.playing && s.restamping {
 			s.mu_seg.Unlock()
 			////fmt.Println("[director] Preparado para recibir segmentos por el /tmp/fifo1")
@@ -316,10 +321,11 @@ func (s *SegPlay) director() {
 			}
 			// si sale menos de 4 espera 1 segundo y continue (al menos 4 segmentos bajados completamente)
 			fmt.Printf("[director] count = %d\n",count)
-			if count < 4 {
+			if count < 4 && startremote {
 				time.Sleep(25 * time.Millisecond)
 				continue // al inicio del for
 			} else {
+				startremote = false
 				// si es 4 o mas, hacemos un SELECT MIN(lastconnect) y recoge todos los valores (nombre fichero incluido)
 				query, err := db.Query("SELECT  * FROM segmentos WHERE last_connect = (SELECT min(last_connect) FROM segmentos)")
 				if err != nil {
@@ -382,6 +388,10 @@ func (s *SegPlay) downloader() {
 			}
 		}
 		s.mu_seg.Lock()
+		if !s.running {
+			s.mu_seg.Unlock()
+			break
+		}
 		//s.lastdownload = filename + ".ts"
 		lineacomandos = fmt.Sprintf("/usr/bin/wget --limit-rate=625k -S -O %sdownload.ts --post-data tv_id=%s&mac=%s&semaforo=%s&downloaded=%s&bytes=%d&md5sum=%s http://%s/download.cgi",
 			rootdir, s.settings["tv_id"], s.settings["mac"], semaforo, s.lastdownload, bytes, md5sum, s.settings["ip_download"])
