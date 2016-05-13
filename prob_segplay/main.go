@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/isaacml/test/segplay"
+	"github.com/isaacml/segplay"
 	"fmt"
 	"time"
 	"runtime"
