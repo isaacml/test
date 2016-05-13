@@ -499,7 +499,9 @@ func (s *SegPlay) downloader() {
 			os.Remove(rootdir + "download.ts")
 			fmt.Println("[downloader] download.ts borrado")
 		}
-		time.Sleep(1 * time.Second) // re-try downloads every second
+		if !downloadedok { 
+			time.Sleep(1 * time.Second) // re-try downloads every second
+		} 
 	}
 }
 
