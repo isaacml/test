@@ -5,16 +5,12 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 )
 
 // secuencia /tmp/fifo
 // secuencia /tmp/outputmix.ts
 func main() {
-	segments := []string{
-		"play1.ts", "play2.ts", "play3.ts", "play4.ts",
-	}
-
+	var i int
 	if len(os.Args) != 2 {
 		fmt.Printf("Usage:\n\n\t%s /tmp/outputmix.ts\n\n", os.Args[0])
 		os.Exit(1)
@@ -25,18 +21,26 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer fw.Close()
-	for _, v := range segments {
-		fr, err := os.Open(v) // read-only
+	for {
+		file := fmt.Sprintf("play%d.ts",i)
+		fr, err := os.Open(file) // read-only
 		if err != nil {
 			log.Fatalln(err)
 		}
 		if n, err := io.Copy(fw, fr); err == nil {
-			fmt.Printf("Copiados %d bytes\n", n)
+			fmt.Printf("[%s]Copiados %d bytes\n", file, n)
 		} else {
 			log.Println(err) // no salimos en caso de error de copia
 		}
 		fr.Close()
-		time.Sleep(200 * time.Millisecond)
+		i++
+		if i > 5 {
+			i = 0
+		}
+		// wait for an Intro key
+		//r := bufio.NewReader(os.Stdin)
+		//r.ReadByte()
+		//time.Sleep(200 * time.Millisecond)
 	}
 	fmt.Println("Finalizamos")
 }
