@@ -1,35 +1,25 @@
 package main
 
 import (
+	"net/http"
+	"net/url"
+	"io/ioutil"
+	"log"
 	"fmt"
-	"os/exec"
-	"bufio"
-	"strings"
 )
 
 func main(){
-/*	settings := map[string]string{
-		"overscan"		:		"1",
-		"x0"			:		"0",
-		"y0"			:		"0",
-		"x1"			:		"719",
-		"y1"			:		"575",
-		"vol"			:		"1",	
+	v := url.Values{}
+	v.Set("query", "SELECT ipv4 FROM server where id = 2")
+	resp, err := http.PostForm("http://localhost:9999/data.cgi", v)
+	if err!=nil{
+		log.Fatal(err)
 	}
-*/	fmt.Println("...")
-	decoder_exe := exec.Command("/bin/sh","-c","/usr/bin/omxplayer -s -o both --layer 1 --no-osd -b play.ts")
-	stderrRead,_ := decoder_exe.StderrPipe()
-	mediareader := bufio.NewReader(stderrRead)
-	decoder_exe.Start()
-	for{
-		line,err := mediareader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Salgo de omxplayer")	
-			break
-		}
-		line=strings.TrimRight(line,"\n")
-		fmt.Println("[cmd]",line)
-	}	
-	decoder_exe.Wait()
+	defer resp.Body.Close()
+  	body, err := ioutil.ReadAll(resp.Body)
+  	if err!=nil{
+		log.Fatal(err)
+	}
+	fmt.Printf("Hola: %s\n", string(body))
 }
 
