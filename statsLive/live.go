@@ -27,14 +27,12 @@ func createStats(namefile, agent, forwarded, remoteip string){
 	for key, value := range userAgent{
 		if strings.Contains(agent, value){
 			so = key
-			fmt.Printf("SO: %s\n", so)
 			existe = true
 		}
 	}
 	//Agent User not find
 	if !existe{
 		so = "other"			
-		fmt.Println(so)
 	}
 	//Cuando el forwarded está vacio
 	if forwarded == "" {
@@ -44,6 +42,7 @@ func createStats(namefile, agent, forwarded, remoteip string){
 		ipcliente = forwarded
 		ipproxy = remoteip
 	}
+	fmt.Printf("SO: %s\n", so)					//Sistema Operativo
 	fmt.Printf("Stream: %s\n", streamname)		//Nombre del stream
 	fmt.Printf("User: %s\n", user)				//Nombre del usuario
 	fmt.Printf("ClienteIP: %s\n", ipcliente)	//IP Cliente
