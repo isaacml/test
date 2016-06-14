@@ -16,7 +16,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("Comenzamos ...")
-	fw, err := os.OpenFile(os.Args[1], os.O_WRONLY|os.O_CREATE, 0666)
+	fw, err := os.OpenFile(os.Args[1], os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -31,6 +31,7 @@ func main() {
 			fmt.Printf("[%s]Copiados %d bytes\n", file, n)
 		} else {
 			log.Println(err) // no salimos en caso de error de copia
+			break
 		}
 		fr.Close()
 		i++
