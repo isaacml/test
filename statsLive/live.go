@@ -16,22 +16,25 @@ func main(){
 func createStats(namefile, agent, forwarded, remoteip string){
 	userAgent := map[string]string {"win":"Windows", "mac":"Mac OS X", "and":"Android", "lin":"Linux"}
 	var existe bool
-	var stream, ipcliente, ipproxy string
+	var stream, ipcliente, ipproxy, so, user, streamname string
 	//operaciones sobre el namefile
 	fmt.Sscanf(namefile, "/var/segments/live/%s", &stream)
 	nom := strings.Split(stream, ".")
-	streamname := nom[0]
-	username   := strings.Split(streamname, "-")
+	username := strings.Split(nom[0], "-")
+	user = username[0]
+	streamname = username[1]
 	//operaciones para el user agent
 	for key, value := range userAgent{
 		if strings.Contains(agent, value){
-			fmt.Printf("SO: %s\n", key)
+			so = key
+			fmt.Printf("SO: %s\n", so)
 			existe = true
 		}
 	}
 	//Agent User not find
-	if !existe{			
-		fmt.Printf("SO: other\n")
+	if !existe{
+		so = "other"			
+		fmt.Println(so)
 	}
 	//Cuando el forwarded está vacio
 	if forwarded == "" {
@@ -42,7 +45,7 @@ func createStats(namefile, agent, forwarded, remoteip string){
 		ipproxy = remoteip
 	}
 	fmt.Printf("Stream: %s\n", streamname)		//Nombre del stream
-	fmt.Printf("User: %s\n", username[0])		//Nombre del usuario
+	fmt.Printf("User: %s\n", user)				//Nombre del usuario
 	fmt.Printf("ClienteIP: %s\n", ipcliente)	//IP Cliente
 	fmt.Printf("ProxyIP: %s\n", ipproxy)		//IP Proxy
 }
