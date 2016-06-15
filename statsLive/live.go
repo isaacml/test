@@ -1,63 +1,45 @@
 package main
 
 import (
-	"strings"
+	"encoding/xml"
 	"fmt"
+	"net/http"
+	"io/ioutil"
 )
 
-func main(){
-	namefile  := "/var/segments/live/isaac-stream.m3u8"
-	agent 	  := "Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0 Iceweasel/38.6.1"
-	forwarded := "79.109.178.183"
-	remoteip  := getip("46.105.196.10:13089")
-	createStats(namefile, agent, forwarded, remoteip)
-}
+func main() {
 
-func createStats(namefile, agent, forwarded, remoteip string){
-	userAgent := map[string]string {"win":"Windows", "mac":"Mac OS X", "and":"Android", "lin":"Linux"}
-	var existe bool
-	var stream, ipcliente, ipproxy, so, user, streamname string
-	//operaciones sobre el namefile
-	fmt.Sscanf(namefile, "/var/segments/live/%s", &stream)
-	nom := strings.Split(stream, ".")
-	username := strings.Split(nom[0], "-")
-	user = username[0]
-	streamname = username[1]
-	//operaciones para el user agent
-	for key, value := range userAgent{
-		if strings.Contains(agent, value){
-			so = key
-			existe = true
-		}
-	}
-	//Agent User not find
-	if !existe{
-		so = "other"			
-	}
-	//Cuando el forwarded está vacio
-	if forwarded == "" {
-		ipcliente = remoteip
-		ipproxy = ""
-	}else{
-		ipcliente = forwarded
-		ipproxy = remoteip
-	}
-	fmt.Printf("SO: %s\n", so)					//Sistema Operativo
-	fmt.Printf("Stream: %s\n", streamname)		//Nombre del stream
-	fmt.Printf("User: %s\n", user)				//Nombre del usuario
-	fmt.Printf("ClienteIP: %s\n", ipcliente)	//IP Cliente
-	fmt.Printf("ProxyIP: %s\n", ipproxy)		//IP Proxy
+type Result struct {
+	Nombre  []string `xml:"server>application>live>stream>name"`
+	Time  	[]string `xml:"server>application>live>stream>time"`
+	Bw_in  	[]string `xml:"server>application>live>stream>bw_in"`
+	Ip  	[]string `xml:"server>application>live>stream>client>address"`
+	Width  	[]string `xml:"server>application>live>stream>meta>video>width"`
+	Height  []string `xml:"server>application>live>stream>meta>video>height"`
+	Frame   []string `xml:"server>application>live>stream>meta>video>frame_rate"`
+	Vcodec  []string `xml:"server>application>live>stream>meta>video>codec"`
+	Acodec  []string `xml:"server>application>live>stream>meta>audio>codec"`
 }
+resp, err := http.Get("http://cdn.nulldrops.com:8080/stats")
+if err != nil {
+	fmt.Println(err)
+}
+defer resp.Body.Close()
+body, err := ioutil.ReadAll(resp.Body)
+v := Result{}
+err = xml.Unmarshal([]byte(body), &v)
+if err != nil {
+	fmt.Printf("error: %v", err)
+	return
+}
+fmt.Printf("Name: %q\n", v.Nombre)
+fmt.Printf("Time: %q\n", v.Time)
+fmt.Printf("Bw_in: %q\n", v.Bw_in)
+fmt.Printf("IP: %q\n", v.Ip)
+fmt.Printf("Width: %q\n", v.Width)
+fmt.Printf("Height: %q\n", v.Height)
+fmt.Printf("Frame Rate: %q\n", v.Frame)
+fmt.Printf("Codec de video: %q\n", v.Vcodec)
+fmt.Printf("Codec de audio: %q\n", v.Acodec)
 
-func getip(pseudoip string) string {
-	var res string
-	if strings.Contains(pseudoip, "]:") {
-	  part := strings.Split(pseudoip, "]:")
-	  res = part[0]
-	  res = res[1:]
-	}else{
-	  part := strings.Split(pseudoip, ":")
-	  res = part[0]
-	} 
-	  return res
 }
