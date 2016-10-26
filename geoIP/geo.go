@@ -9,7 +9,7 @@ import (
 
 func main() {
   var region string
-    db, err := geoip2.Open("/home/isaac/geoip2/GeoIP2-City.mmdb")
+    db, err := geoip2.Open("/home/isaac/DBs/GeoIP2-City.mmdb")
     if err != nil {
             log.Fatal(err)
     }
